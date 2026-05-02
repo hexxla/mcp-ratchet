@@ -268,3 +268,86 @@ func RegisterGetTimeTool(server *mcp.Server, ratchet ratchetPorts.RatchetService
 		Description: "Returns the current time (for demo purposes, returns a fixed time)",
 	}, handler)
 }
+
+// RegisterGetDateTool registers the get_date tool on the MCP server
+func RegisterGetDateTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, sessionStore ratchetSecondary.SessionStore, log *slog.Logger) {
+	type getDateInput struct{}
+	type getDateResponse struct {
+		Date string `json:"date"`
+	}
+
+	handler := func(ctx context.Context, req *mcp.CallToolRequest, _ getDateInput) (*mcp.CallToolResult, getDateResponse, error) {
+		if log != nil {
+			log.DebugContext(ctx, "get_date tool invoked")
+		}
+
+		resp := getDateResponse{Date: "2026-05-02"}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: resp.Date},
+			},
+		}, resp, nil
+	}
+
+	// Wrap with ratchet if provided
+	if ratchet != nil {
+		originalHandler := handler
+		wrappedHandler := func(ctx context.Context, req *mcp.CallToolRequest, input getDateInput) (*mcp.CallToolResult, getDateResponse, error) {
+			// Generate simple session ID from request (for demo, use fixed session)
+			sessionID := ratchetDomain.SessionID("demo-session")
+
+			// Get or create session
+			session, err := sessionStore.Get(ctx, sessionID)
+			if err != nil {
+				session = ratchetDomain.NewSession(sessionID)
+				if createErr := sessionStore.Create(ctx, session); createErr != nil {
+					log.WarnContext(ctx, "failed to create session", "error", createErr)
+				}
+			}
+
+			// Get stored token for this tool from session
+			var token ratchetDomain.TokenValue
+			if tokens, ok := session.Tokens["get_date"]; ok && len(tokens) > 0 {
+				token = tokens[len(tokens)-1] // Get the latest token
+			}
+
+			// Validate tool call
+			err = ratchet.ValidateToolCall(ctx, sessionID, "get_date", token)
+			if err != nil {
+				return nil, getDateResponse{}, fmt.Errorf("ratchet validation failed: %w", err)
+			}
+
+			// Execute the handler
+			result, resp, err := originalHandler(ctx, req, input)
+			if err != nil {
+				return result, resp, err
+			}
+
+			// Issue token after successful execution (this retrieves and updates the session)
+			_, err = ratchet.IssueToken(ctx, sessionID, "get_date")
+			if err != nil {
+				log.WarnContext(ctx, "failed to issue ratchet token", "error", err)
+			}
+
+			// Re-fetch session after IssueToken to ensure we have the latest state
+			session, err = sessionStore.Get(ctx, sessionID)
+			if err != nil {
+				log.WarnContext(ctx, "failed to get session after token issuance", "error", err)
+			} else {
+				// Record tool call in session AFTER issuing token
+				session.RecordToolCall("get_date")
+				if updateErr := sessionStore.Update(ctx, session); updateErr != nil {
+					log.WarnContext(ctx, "failed to update session with tool call", "error", updateErr)
+				}
+			}
+
+			return result, resp, nil
+		}
+		handler = wrappedHandler
+	}
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_date",
+		Description: "Returns the current date (for demo purposes, returns a fixed date)",
+	}, handler)
+}

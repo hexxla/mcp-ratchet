@@ -17,9 +17,16 @@ rules:
     error_message: "You must call the 'greet' tool before calling 'get_user_name'. Please call greet first to establish the required session."
     one_time_use: false
 
-  # get_time requires greet to be called first (one-time use token)
+  # get_time requires get_user_name to be called first (chain dependency)
   - tool: get_time
-    prerequisite: greet
+    prerequisite: get_user_name
     expiry: 15s
-    error_message: "You must call the 'greet' tool before calling 'get_time'. Please call greet first to establish the required session."
-    one_time_use: true
+    error_message: "You must call the 'get_user_name' tool before calling 'get_time'. Please call get_user_name first."
+    one_time_use: false
+
+  # get_date requires get_time to be called first (chain dependency)
+  - tool: get_date
+    prerequisite: get_time
+    expiry: 15s
+    error_message: "You must call the 'get_time' tool before calling 'get_date'. Please call get_time first."
+    one_time_use: false

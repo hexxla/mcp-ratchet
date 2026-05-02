@@ -74,6 +74,7 @@ func run(log *slog.Logger) error {
 	mcp.RegisterGreetingTool(srv, greetingService, ratchetSvc, sessionStore, log)
 	mcp.RegisterGetUserNameTool(srv, userService, ratchetSvc, sessionStore, log)
 	mcp.RegisterGetTimeTool(srv, ratchetSvc, sessionStore, log)
+	mcp.RegisterGetDateTool(srv, ratchetSvc, sessionStore, log)
 
 	// Create HTTP handler
 	h := mcp.StreamableHTTPHandler(srv, log)
