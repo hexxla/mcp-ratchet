@@ -1,0 +1,25 @@
+# Ratchet Configuration
+# Defines tool dependencies for MCP tools
+# A tool cannot be called unless its prerequisite has been completed
+
+rules:
+  # greet tool has no prerequisites (can be called first)
+  - tool: greet
+    prerequisite: ""
+    expiry: 15s
+    error_message: ""
+    one_time_use: false
+
+  # get_user_name requires greet to be called first
+  - tool: get_user_name
+    prerequisite: greet
+    expiry: 15s
+    error_message: "You must call the 'greet' tool before calling 'get_user_name'. Please call greet first to establish the required session."
+    one_time_use: false
+
+  # get_time requires greet to be called first (one-time use token)
+  - tool: get_time
+    prerequisite: greet
+    expiry: 15s
+    error_message: "You must call the 'greet' tool before calling 'get_time'. Please call greet first to establish the required session."
+    one_time_use: true

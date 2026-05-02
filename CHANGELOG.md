@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Bootstrapper CLI skeleton (`cmd/go-llm-project-structure/main.go`)
+- Bootstrapper CLI skeleton (`cmd/mcp-ratchet-demo/main.go`)
 - Hexagonal architecture guardrail script
 - AGENTS.md with instructions for LLMs and contributors
 - Layer-specific README.md files explaining responsibilities
@@ -31,5 +31,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standardized project layout for LLM-friendly hexagonal architecture templates
 
-[Unreleased]: https://github.com/sploitzberg/go-hexagonal-architecture-template/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/sploitzberg/go-hexagonal-architecture-template/releases/tag/v0.1.0
+[Unreleased]: https://github.com/hexxla/mcp-ratchet/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hexxla/mcp-ratchet/releases/tag/v0.1.0

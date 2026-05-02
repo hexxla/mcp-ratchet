@@ -14,14 +14,14 @@ BINDIR  = bin/$(GOOS)-$(GOARCH)
 EXE     = $(if $(filter windows,$(GOOS)),.exe,)
 
 # Build settings
-BINARY_NAME := go-llm-project-structure
+BINARY_NAME := mcp-ratchet-demo
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # Build for the host OS/arch.
 build:
 	@mkdir -p $(BINDIR)
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -ldflags="-s -w -X main.version=$(VERSION)" \
-		-o $(BINDIR)/$(BINARY_NAME)$(EXE) ./cmd/go-llm-project-structure
+		-o $(BINDIR)/$(BINARY_NAME)$(EXE) ./cmd/mcp-ratchet-demo
 	@echo "  → $(BINDIR)/$(BINARY_NAME)$(EXE)"
 
 # Cross-compile helpers — override GOARCH if needed (e.g. make build-linux GOARCH=arm64).
@@ -91,7 +91,7 @@ clean-llm: clean-llm-all
 clean-llm: clean-llm-all
 
 install:
-	go install ./cmd/go-llm-project-structure
+	go install ./cmd/mcp-ratchet-demo
 
 help:
 	@echo "Available targets:"
@@ -114,7 +114,7 @@ help:
 	@echo "  make llm-setup       Setup LLM tool configurations"
 
 run:
-	go run ./cmd/go-llm-project-structure
+	go run ./cmd/mcp-ratchet-demo
 
 clean:
 	rm -rf bin

@@ -20,9 +20,10 @@ go_files=$(find . -name "*.go" ! -path "./vendor/*" ! -path "./.git/*" 2>/dev/nu
 
 for file in $go_files; do
     # Check 1: No context.Background() in exported functions (should accept context)
-    if grep -q "func [A-Z]" "$file" && grep -q "context.Background()" "$file"; then
+    # Skip test files - context.Background() is fine in tests
+    if [[ ! "$file" =~ _test\.go$ ]] && grep -q "func [A-Z]" "$file" && grep -q "context.Background()" "$file"; then
         echo -e "${YELLOW}warning:${NC} $file: Exported function uses context.Background() - consider accepting context.Context as parameter"
-        ((warnings++))
+        warnings=$((warnings + 1))
     fi
 
     # Check 2: No TODO/FIXME/HACK comments in production code

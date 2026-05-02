@@ -27,9 +27,7 @@ linters:
           files:
             - internal/core/domain/**/*.go
           deny:
-            - pkg:
-                "github.com/sploitzberg/go-llm-project-structure/internal/(adapt\
-                er|core/services|core/ports)"
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/(adapter|core/services|core/ports)"
               desc: "core/domain/ must not depend on adapter, services, or ports (hexagonal rule)"
 
         # Rule 2: core/services/ must not depend on adapter
@@ -37,8 +35,7 @@ linters:
           files:
             - internal/core/services/**/*.go
           deny:
-            - pkg:
-                "github.com/sploitzberg/go-llm-project-structure/internal/adapte\
+            - pkg: "github.com/sploitzberg/mcp-ratchet/internal/adapte\
                 r"
               desc: "core/services/ must not depend on adapter/ (use ports instead)"
 
@@ -47,8 +44,7 @@ linters:
           files:
             - internal/core/ports/**/*.go
           deny:
-            - pkg:
-                "github.com/sploitzberg/go-llm-project-structure/internal/(adapt\
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/(adapt\
                 er|core/services)"
               desc: "core/ports/ must not depend on adapter or services"
 
@@ -57,8 +53,7 @@ linters:
           files:
             - internal/adapter/primary/**/*.go
           deny:
-            - pkg:
-                "github.com/sploitzberg/go-llm-project-structure/internal/(core/servi\
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/(core/servi\
                 ces|adapter/secondary)"
               desc: "primary adapters should only depend on core/domain and core/ports"
 
@@ -91,7 +86,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/sploitzberg/go-llm-project-structure
+        - github.com/hexxla/mcp-ratchet
 
 issues:
   max-issues-per-linter: 0

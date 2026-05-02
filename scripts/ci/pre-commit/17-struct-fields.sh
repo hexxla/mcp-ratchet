@@ -38,14 +38,14 @@ for file in $domain_files; do
         if echo "$struct_body" | grep -E "internal/(adapter|core/services|core/ports)" | grep -q .; then
             echo -e "${RED}error:${NC} $file:$line_num Struct $struct_name has fields from adapter/services/ports packages"
             echo "$struct_body" | grep -E "internal/(adapter|core/services|core/ports)"
-            ((errors++))
+            errors=$((errors + 1))
         fi
 
         # Check for framework types in domain structs
         if echo "$struct_body" | grep -E "(github\.com/gin|github\.com/gorilla|database/sql|http\.ResponseWriter|http\.Request)" | grep -q .; then
             echo -e "${RED}error:${NC} $file:$line_num Struct $struct_name has framework types (forbidden in domain)"
             echo "$struct_body" | grep -E "(github\.com/gin|github\.com/gorilla|database/sql|http\.ResponseWriter|http\.Request)"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     done <<< "$struct_defs"
 done
@@ -63,13 +63,19 @@ for dir in internal/core/services internal/core/ports; do
 
         while IFS= read -r line; do
             line_num=$(echo "$line" | cut -d: -f1)
+
+            # Skip if line_num is empty
+            if [ -z "$line_num" ]; then
+                continue
+            fi
+
             struct_body=$(sed -n "${line_num},/^}/p" "$file" || true)
 
             # Check for framework types in services/ports
             if echo "$struct_body" | grep -E "(github\.com/gin|github\.com/gorilla|database/sql)" | grep -q .; then
                 echo -e "${RED}error:${NC} $file:$line_num Struct in $dir has framework types (forbidden)"
                 echo "$struct_body" | grep -E "(github\.com/gin|github\.com/gorilla|database/sql)"
-                ((errors++))
+                errors=$((errors + 1))
             fi
         done <<< "$struct_defs"
     done

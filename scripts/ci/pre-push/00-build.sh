@@ -25,11 +25,11 @@ if [[ "$GOOS" == "windows" ]]; then
     EXE=".exe"
 fi
 
-BINARY_NAME="go-llm-project-structure"
+BINARY_NAME="mcp-ratchet-demo"
 
 # Create output directory and build
 mkdir -p "$BINDIR"
-go build -o "${BINDIR}/${BINARY_NAME}${EXE}" ./cmd/go-llm-project-structure
+go build -o "${BINDIR}/${BINARY_NAME}${EXE}" ./cmd/mcp-ratchet-demo
 
 echo -e "${GREEN}Build: OK${NC}"
 echo

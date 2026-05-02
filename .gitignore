@@ -89,6 +89,6 @@ NOTES.md
 # LLM tool configurations
 .cursor/
 .claude/
-.windsurf/
+# .windsurf/
 .continue/
 .codex/

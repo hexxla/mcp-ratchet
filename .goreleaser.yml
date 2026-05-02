@@ -20,7 +20,7 @@ builds:
       - arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
-    main: ./cmd/go-llm-project-structure
+    main: ./cmd/mcp-ratchet-demo
 
 archives:
   - format: tar.gz
