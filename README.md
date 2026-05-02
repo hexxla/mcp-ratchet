@@ -2,6 +2,30 @@
 
 A Go package for enforcing tool call order in MCP servers using configurable token-based dependencies.
 
+## Problem
+
+LLMs often attempt to call tools in the wrong order or without necessary prerequisites, leading to:
+
+- Failed API calls due to missing authentication or setup
+- Incorrect results from tools that depend on prior state
+- Confusion when complex workflows require specific sequences
+- Difficulty enforcing systematic patterns in agent behavior
+- **Contextless use of critical tools** that require proper setup or state
+
+## Solution
+
+mcp-ratchet enforces tool call order and compliance through a token-based system:
+
+- Tools require tokens from prerequisite tools before they can be called
+- Tokens are issued after successful tool execution
+- Tokens can expire or be one-time use
+- Multi-level dependency chains are supported
+- Configuration is via simple YAML files
+- **Custom error messages guide LLMs to the correct next step**
+- **Enforces compliance for critical tools that cannot afford contextless use**
+
+This ensures LLMs follow the correct workflow every time, with clear error messages guiding them when prerequisites are missing. Critical tools (e.g., authentication, setup, data modification) are protected from being called without the necessary context or prior steps.
+
 ## Quick Start
 
 ```bash
@@ -69,6 +93,11 @@ func RegisterMyTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, ses
 
     // Wrap with ratchet validation
     wrappedHandler := func(ctx context.Context, req *mcp.CallToolRequest, input MyToolInput) (*mcp.CallToolResult, MyToolOutput, error) {
+        // Derive session ID from request context, authentication, or conversation ID
+        // For demo purposes, you might use a fixed session ID, but in production:
+        // - Extract from request headers (e.g., user ID, conversation ID)
+        // - Use request metadata or correlation ID
+        // - Derive from authentication context
         sessionID := ratchetDomain.SessionID("session-123")
 
         // Get or create session
@@ -117,7 +146,7 @@ func RegisterMyTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, ses
 }
 ```
 
-### Configuration
+### YAML Configuration
 
 Define tool dependencies in YAML:
 
@@ -178,3 +207,75 @@ Your tool system (MCP server, gRPC service, HTTP API, CLI tool, etc.) integrates
 ### Default Behavior
 
 If no config rule is defined for a tool, it is unrestricted and works without prerequisites.
+
+## How It Works
+
+### Token Flow
+
+1. **Tool Called Without Prerequisite**: Validation passes immediately
+2. **Tool With Prerequisite Called**:
+   - Validates that prerequisite tool has been called
+   - Checks that prerequisite's token is valid (not expired)
+   - If one-time use is enabled, consumes the token
+3. **After Successful Execution**: Issues a new token for this tool
+4. **Token Storage**: Tokens stored in both session and token store for expiry tracking
+
+### Managing Sessions
+
+Sessions track:
+
+- Which tools have been called (`ToolHistory`)
+- Valid tokens for each tool (`Tokens` map)
+- Session creation time (`CreatedAt`)
+
+Sessions are identified by a `SessionID` (string) that you provide in your application code. Common sources:
+
+- User ID from authentication
+- Conversation ID from a chat system
+- Request ID or correlation ID
+- Any unique identifier for the session/workflow
+
+## Best Practices
+
+### Rule Configuration
+
+- Use descriptive error messages that guide LLMs to the correct next step
+- Set appropriate expiry times based on your workflow (short for sensitive operations, longer for setup steps)
+- Use `one_time_use: true` for operations that should not be repeated (e.g., setup, authentication)
+- Test dependency chains incrementally to ensure each step works before adding complexity
+
+### Managing Sessions
+
+- Use consistent session IDs (e.g., user ID, conversation ID)
+- Consider session lifecycle (when to create, when to expire)
+- Monitor token usage patterns to identify workflow issues
+
+### Error Messages
+
+- Write error messages that are actionable for LLMs
+- Include the exact tool name that needs to be called
+- Provide context about what the prerequisite accomplishes
+
+## Troubleshooting
+
+### Common Issues
+
+**Issue**: Tool call fails with "You must call the 'X' tool before calling 'Y'"
+
+- **Cause**: Prerequisite tool hasn't been called or token expired
+- **Solution**: Call the prerequisite tool first, or check token expiry configuration
+
+**Issue**: Token consumed after one use but should be reusable
+
+- **Cause**: `one_time_use: true` is set in config
+- **Solution**: Set `one_time_use: false` for reusable tokens
+
+**Issue**: Multi-level chain not working
+
+- **Cause**: Tools depending on wrong prerequisite in chain
+- **Solution**: Ensure each tool depends on its direct predecessor, not the chain root
+
+**Issue**: Token expiry too short/long
+
+- **Cause**: Expiry duration in config doesn't match workflow needs
+- **Solution**: Adjust `expiry` field (e.g., `5m`, `1h`, `24h`)
