@@ -12,7 +12,7 @@ This plan addresses inconsistencies and gaps identified in the initial observabi
 ## Issues Identified
 
 ### 1. Missing `session_created` Event Emission
-**Severity:** Medium  
+**Severity:** Medium
 **Impact:** Incomplete event coverage
 
 The domain defines `EventTypeSessionCreated` but the service never emits it when a session is created. This makes it impossible to track when sessions are initialized via observability.
@@ -24,7 +24,7 @@ The domain defines `EventTypeSessionCreated` but the service never emits it when
 ---
 
 ### 2. Factory Signature Limits Extensibility
-**Severity:** High  
+**Severity:** High
 **Impact:** Cannot add HexxlaDB/SQL backends without breaking the factory
 
 `NewEventStore(cfg)` only accepts configuration. To add HexxlaDB or SQL backends, we need to pass database clients. The current factory signature doesn't support optional dependencies.
@@ -35,7 +35,7 @@ The domain defines `EventTypeSessionCreated` but the service never emits it when
 ---
 
 ### 3. Retention Pruning on Every `Store`
-**Severity:** Low  
+**Severity:** Low
 **Impact:** Performance inefficiency under high volume
 
 `MemoryEventStore` prunes expired events on every `Store` call. For high-volume scenarios, a background goroutine with periodic pruning would be more efficient.
@@ -46,7 +46,7 @@ The domain defines `EventTypeSessionCreated` but the service never emits it when
 ---
 
 ### 4. Event ID Generation Not Collision-Safe
-**Severity:** Low  
+**Severity:** Low
 **Impact:** Potential ID collisions under high concurrency
 
 Current ID generation uses `fmt.Sprintf("%s-%s-%d", eventType, tool, s.clock.Now().UnixNano())`. While nanosecond timestamps reduce collision probability, UUIDs are safer for production systems.
@@ -57,7 +57,7 @@ Current ID generation uses `fmt.Sprintf("%s-%s-%d", eventType, tool, s.clock.Now
 ---
 
 ### 5. HTTP Endpoint Limitations
-**Severity:** Low  
+**Severity:** Low
 **Impact:** Limited usability for production web UI
 
 Current endpoints lack:

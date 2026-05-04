@@ -95,7 +95,7 @@ type MCPConfig struct {
 }
 
 func loadMCPConfig(path string) (*MCPConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 - path from flag, controlled by admin
 	if err != nil {
 		return nil, fmt.Errorf("failed to read MCP config: %w", err)
 	}

@@ -26,7 +26,7 @@ type EventBroadcaster interface {
 //
 // Now when ratchet emits events, they are both stored AND broadcast.
 type BroadcastingEventStore struct {
-	base       secondary.EventStore
+	base        secondary.EventStore
 	broadcaster EventBroadcaster
 }
 

@@ -17,7 +17,7 @@ func main() {
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	log.Println("connected to WebSocket, listening for events...")
 
