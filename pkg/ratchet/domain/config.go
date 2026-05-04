@@ -14,4 +14,8 @@ type ObservabilityConfig struct {
 	// RetentionDays specifies how long events are kept before pruning.
 	// A value of 0 disables pruning (keep all events).
 	RetentionDays int `yaml:"retention_days"`
+
+	// WebSocketEnabled controls whether the WebSocket streaming endpoint is active.
+	// When true, clients can connect to /observability/stream for real-time events.
+	WebSocketEnabled bool `yaml:"websocket_enabled"`
 }

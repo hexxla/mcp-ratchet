@@ -12,8 +12,11 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/hexxla/mcp-ratchet/internal/adapter/primary/mcp"
 	"github.com/hexxla/mcp-ratchet/internal/core/services"
@@ -23,6 +26,51 @@ import (
 	ratchetSecondary "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 	ratchetServices "github.com/hexxla/mcp-ratchet/pkg/ratchet/services"
 )
+
+// WebSocket upgrader configuration
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for demo
+	},
+}
+
+// eventBroadcaster manages WebSocket connections and broadcasts events
+type eventBroadcaster struct {
+	mu          sync.RWMutex
+	connections map[ratchetDomain.SessionID]map[*websocket.Conn]struct{}
+}
+
+func newEventBroadcaster() *eventBroadcaster {
+	return &eventBroadcaster{
+		connections: make(map[ratchetDomain.SessionID]map[*websocket.Conn]struct{}),
+	}
+}
+
+func (b *eventBroadcaster) subscribe(sessionID ratchetDomain.SessionID, conn *websocket.Conn) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.connections[sessionID] == nil {
+		b.connections[sessionID] = make(map[*websocket.Conn]struct{})
+	}
+	b.connections[sessionID][conn] = struct{}{}
+}
+
+func (b *eventBroadcaster) unsubscribe(sessionID ratchetDomain.SessionID, conn *websocket.Conn) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if conns, ok := b.connections[sessionID]; ok {
+		delete(conns, conn)
+		if len(conns) == 0 {
+			delete(b.connections, sessionID)
+		}
+	}
+}
+
+// Production implementations should add a broadcast method here and wire it
+// into the EventStore or RatchetService to push events to WebSocket clients.
+// See observability-improvements.md plan for details.
 
 var version = "dev"
 
@@ -47,6 +95,7 @@ func run(log *slog.Logger) error {
 	// Initialize ratchet service if config provided
 	var ratchetSvc ratchetPorts.RatchetService
 	var sessionStore ratchetSecondary.SessionStore
+	var observabilityCfg ratchetDomain.ObservabilityConfig
 	if *ratchetConfig != "" {
 		configLoader := adapters.NewYAMLConfigLoader()
 		tokenStore := adapters.NewMemoryTokenStore()
@@ -69,6 +118,7 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("failed to load ratchet configuration: %w", err)
 		}
+		observabilityCfg = fullCfg.Observability
 
 		// Create event store based on observability config
 		eventStore, err := adapters.NewEventStore(fullCfg.Observability)
@@ -180,6 +230,59 @@ func run(log *slog.Logger) error {
 				log.Warn("failed to encode events", "error", err)
 			}
 		})
+	}
+
+	// WebSocket streaming endpoint (real-time events)
+	// Connect with: wscat -c "ws://localhost:8080/observability/stream?session_id=demo-session"
+	var broadcaster *eventBroadcaster
+	if ratchetSvc != nil && observabilityCfg.WebSocketEnabled {
+		broadcaster = newEventBroadcaster()
+
+		mux.HandleFunc("GET /observability/stream", func(w http.ResponseWriter, r *http.Request) {
+			sessionID := ratchetDomain.SessionID(r.URL.Query().Get("session_id"))
+			if sessionID == "" {
+				http.Error(w, "session_id required", http.StatusBadRequest)
+				return
+			}
+
+			conn, err := wsUpgrader.Upgrade(w, r, nil)
+			if err != nil {
+				log.Warn("websocket upgrade failed", "error", err)
+				return
+			}
+			defer func() { _ = conn.Close() }()
+
+			broadcaster.subscribe(sessionID, conn)
+			defer broadcaster.unsubscribe(sessionID, conn)
+
+			log.Info("websocket client connected", "session_id", sessionID, "remote_addr", r.RemoteAddr)
+
+			// Send initial confirmation
+			if err := conn.WriteJSON(map[string]string{
+				"type":       "connected",
+				"session_id": string(sessionID),
+			}); err != nil {
+				log.Warn("failed to send websocket confirmation", "error", err)
+				return
+			}
+
+			// Keep connection alive and listen for client disconnect
+			for {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+						log.Warn("websocket error", "error", err)
+					}
+					break
+				}
+			}
+
+			log.Info("websocket client disconnected", "session_id", sessionID)
+		})
+
+		log.Info("WebSocket streaming enabled", "endpoint", "/observability/stream")
+		log.Info("Note: broadcaster not wired to event source in demo mode - production should wrap EventStore or service to broadcast")
+		_ = broadcaster // TODO: Wire broadcaster to event source for production use
 	}
 
 	// MCP endpoint

@@ -5,10 +5,12 @@
 # Observability: capture ratchet lifecycle events for visibility
 # storage_type: memory (default), hexxladb, sql
 # retention_days: 0 = keep all events
+# websocket_enabled: enable real-time WebSocket streaming at /observability/stream
 observability:
   enabled: true
   storage_type: memory
   retention_days: 0
+  websocket_enabled: true
 
 rules:
   # greet tool has no prerequisites (can be called first)
