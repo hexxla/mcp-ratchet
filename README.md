@@ -416,6 +416,102 @@ func (h *ObservabilityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 ```
 
+### WebSocket Streaming (Real-Time)
+
+For real-time event streaming, use the `BroadcastingEventStore` wrapper. This bridges ratchet's event emission with WebSocket broadcasting.
+
+**Architecture:**
+
+```
+RatchetService.emitEvent() → BroadcastingEventStore.Store()
+                                  ↓
+                           ┌──────────────┐
+                           │  Store to    │
+                           │  EventStore  │
+                           └──────────────┘
+                                  ↓
+                           ┌──────────────┐
+                           │  Broadcast   │→ WebSocket clients
+                           │  to subs     │
+                           └──────────────┘
+```
+
+**Implementation:**
+
+```go
+import (
+    "github.com/gorilla/websocket"
+    "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
+)
+
+// 1. Create your broadcaster (manages WebSocket connections)
+type eventBroadcaster struct {
+    connections map[ratchetDomain.SessionID][]*websocket.Conn
+}
+
+func (b *eventBroadcaster) Broadcast(sessionID ratchetDomain.SessionID, event *ratchetDomain.Event) {
+    // Send to all connected WebSocket clients for this session
+    for _, conn := range b.connections[sessionID] {
+        conn.WriteJSON(event)
+    }
+}
+
+// 2. Wrap your EventStore with broadcasting
+baseStore := adapters.NewMemoryEventStore(0)
+broadcaster := &eventBroadcaster{connections: make(map[ratchetDomain.SessionID][]*websocket.Conn)}
+
+store := adapters.NewBroadcastingEventStore(baseStore, broadcaster)
+
+// 3. Pass wrapped store to ratchet service
+ratchetSvc := ratchetServices.NewRatchetServiceWithObservability(
+    configLoader, tokenStore, sessionStore, randomGen, clock, store,
+)
+
+// 4. Now all events are both stored AND broadcast in real-time!
+```
+
+**WebSocket Handler:**
+
+```go
+mux.HandleFunc("GET /observability/stream", func(w http.ResponseWriter, r *http.Request) {
+    sessionID := ratchetDomain.SessionID(r.URL.Query().Get("session_id"))
+
+    conn, err := websocketUpgrader.Upgrade(w, r, nil)
+    if err != nil {
+        return
+    }
+    defer conn.Close()
+
+    // Subscribe to this session's events
+    broadcaster.subscribe(sessionID, conn)
+    defer broadcaster.unsubscribe(sessionID, conn)
+
+    // Keep connection open (events pushed via broadcaster.Broadcast)
+    for {
+        _, _, err := conn.ReadMessage()
+        if err != nil {
+            break
+        }
+    }
+})
+```
+
+**Config Separation:**
+
+```yaml
+# configs/ratchet.yaml - Core ratchet settings
+observability:
+  enabled: true
+  storage_type: memory
+  retention_days: 0
+
+# configs/mcp-config.yaml - Server/presentation settings
+observability:
+  http_enabled: true
+  websocket_enabled: true
+  websocket_path: "/observability/stream"
+```
+
 ## Best Practices
 
 ### Rule Configuration
