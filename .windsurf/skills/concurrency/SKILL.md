@@ -1,11 +1,12 @@
 ---
-name: go-concurrency
+name: concurrency
 description: Validates Go concurrency patterns
 ---
 
 # Go Concurrency Skill
 
 When reviewing or writing Go code:
+
 - Validate goroutines are properly awaited (WaitGroup, channels)
 - Check for potential goroutine leaks
 - Ensure channels are closed correctly (by sender, not receiver)

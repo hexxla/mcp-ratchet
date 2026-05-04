@@ -1,11 +1,12 @@
 ---
-name: go-context-usage
+name: context-usage
 description: Validates Go context.Context usage patterns
 ---
 
 # Go Context Usage Skill
 
 When reviewing or writing Go code:
+
 - Ensure context.Context is the first parameter in functions that need it
 - Validate context is not stored in struct fields
 - Check that context is not used as a value in struct fields

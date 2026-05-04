@@ -1,11 +1,12 @@
 ---
-name: go-error-handling
+name: error-handling
 description: Validates Go error handling patterns
 ---
 
 # Go Error Handling Skill
 
 When reviewing or writing Go code:
+
 - Ensure all errors are checked and not ignored
 - Validate error wrapping with `%w` for context preservation
 - Check that error messages are informative and actionable

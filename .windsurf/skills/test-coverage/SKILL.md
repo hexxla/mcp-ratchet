@@ -1,11 +1,12 @@
 ---
-name: go-test-coverage
+name: test-coverage
 description: Analyzes Go test coverage and suggests improvements
 ---
 
 # Go Test Coverage Skill
 
 When reviewing or writing Go code:
+
 - Analyze test coverage using `go test -coverprofile`
 - Identify uncovered code paths and branches
 - Suggest edge cases and boundary conditions to test
@@ -14,6 +15,6 @@ When reviewing or writing Go code:
 - Validate that tests fail when code is broken
 - Suggest mocking strategies for external dependencies
 - Recommend integration tests for complex flows
-- Check for test file naming conventions (*_test.go)
+- Check for test file naming conventions (\*\_test.go)
 - Ensure test functions start with Test and are exported
 - Validate subtests are used with t.Run for organization

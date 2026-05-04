@@ -1,11 +1,12 @@
 ---
-name: go-interface-design
+name: interface-design
 description: Validates Go interface design and abstractions
 ---
 
 # Go Interface Design Skill
 
 When reviewing or writing Go code:
+
 - Ensure interfaces are small and focused (single responsibility)
 - Validate interfaces are defined by the consumer, not the implementer
 - Check that interfaces don't leak implementation details
