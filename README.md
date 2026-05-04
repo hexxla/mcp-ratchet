@@ -383,9 +383,103 @@ func NewEventStore(cfg ratchetDomain.ObservabilityConfig, hexxlaClient *hexxladb
 }
 ```
 
+### Configuration Separation
+
+mcp-ratchet separates configuration into two distinct concerns:
+
+**ratchet.yaml** - Core ratchet library settings:
+
+```yaml
+# Core ratchet settings - the library captures and stores events
+observability:
+  enabled: true # Ratchet: capture events?
+  storage_type: memory # Ratchet: where to store?
+  retention_days: 0 # Ratchet: how long to keep?
+
+rules:
+  - tool: greet
+    prerequisite: ""
+    expiry: 15s
+    one_time_use: false
+```
+
+**mcp-config.yaml** - Server/presentation layer settings:
+
+```yaml
+# Server-level settings - how to expose ratchet functionality
+observability:
+  http_enabled: true # Server: expose REST endpoints?
+  websocket_enabled: true # Server: expose WebSocket?
+  websocket_path: "/observability/stream"
+
+server:
+  addr: ":8080"
+  mcp_path: "/mcp"
+```
+
+This separation keeps ratchet core independent of how events are exposed (HTTP, WebSocket, etc.).
+
+### Factory Pattern for Custom Event Stores
+
+Use the functional options pattern to inject custom EventStore implementations:
+
+```go
+import (
+    "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
+)
+
+// Create your custom EventStore (e.g., HexxlaDB)
+hexxlaStore := NewHexxlaDBEventStore(hexxlaClient, cfg)
+
+// Pass it via the factory
+eventStore, err := adapters.NewEventStore(cfg,
+    adapters.WithCustomStore(hexxlaStore),
+)
+```
+
+This enables any EventStore implementation without modifying the factory code.
+
+### Background Pruning
+
+The `MemoryEventStore` automatically prunes expired events in the background when `retention_days > 0`:
+
+```go
+// Events older than 7 days are pruned every 5 minutes
+store := adapters.NewMemoryEventStore(7)
+
+// Graceful shutdown when done
+if memStore, ok := store.(*adapters.MemoryEventStore); ok {
+    memStore.Stop() // Stops the background pruner
+}
+```
+
+### Event IDs
+
+All events are assigned collision-safe UUIDs for production use:
+
+```json
+{
+  "ID": "e6d23263-9266-43a6-bf8d-dac08c75ea8b",
+  "Type": "tool_call_success",
+  "SessionID": "demo-session",
+  ...
+}
+```
+
+### Session Creation Events
+
+When using `CreateSession`, a `session_created` event is emitted automatically:
+
+```go
+// Creates session AND emits session_created event
+session, err := ratchetSvc.CreateSession(ctx, sessionID)
+```
+
+This provides complete visibility into session lifecycle.
+
 ### HTTP Endpoint (Web UI)
 
-Add an HTTP endpoint to expose events for a web UI:
+Add an HTTP endpoint to expose events for a web UI, with pagination and filtering:
 
 ```go
 // ObservabilityHandler serves ratchet events via HTTP
@@ -405,15 +499,69 @@ func (h *ObservabilityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
     case "/observability/events":
         sessionID := r.URL.Query().Get("session_id")
+
+        // Build filter from query parameters
+        filter := &ratchetSecondary.EventFilter{}
+
+        // Filter by event types (comma-separated)
+        if raw := r.URL.Query().Get("event_type"); raw != "" {
+            for _, t := range strings.Split(raw, ",") {
+                filter.EventTypes = append(filter.EventTypes, ratchetDomain.EventType(strings.TrimSpace(t)))
+            }
+        }
+
+        // Filter by tool names (comma-separated)
+        if raw := r.URL.Query().Get("tool_name"); raw != "" {
+            for _, t := range strings.Split(raw, ",") {
+                filter.ToolNames = append(filter.ToolNames, ratchetDomain.ToolName(strings.TrimSpace(t)))
+            }
+        }
+
+        // Pagination (limit and offset)
+        limit := 100
+        if raw := r.URL.Query().Get("limit"); raw != "" {
+            if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+                limit = n
+            }
+        }
+        offset := 0
+        if raw := r.URL.Query().Get("offset"); raw != "" {
+            if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+                offset = n
+            }
+        }
+        filter.Limit = limit + offset
+
         events, err := h.ratchetSvc.GetObservabilityEvents(r.Context(),
-            ratchetDomain.SessionID(sessionID), nil)
+            ratchetDomain.SessionID(sessionID), filter)
         if err != nil {
             http.Error(w, err.Error(), 500)
             return
         }
+
+        // Apply offset for pagination
+        if offset > 0 && offset < len(events) {
+            events = events[offset:]
+        } else if offset >= len(events) {
+            events = []*ratchetDomain.Event{}
+        }
+
         json.NewEncoder(w).Encode(events)
     }
 }
+```
+
+**Usage examples:**
+
+```bash
+# Get all events for a session
+curl "http://localhost:8080/observability/events?session_id=demo-session"
+
+# Get only failures, last 10
+curl "http://localhost:8080/observability/events?session_id=demo-session&event_type=tool_call_failure&limit=10"
+
+# Get events for specific tool, page 2 (10 per page)
+curl "http://localhost:8080/observability/events?session_id=demo-session&tool_name=greet&limit=10&offset=10"
 ```
 
 ### WebSocket Streaming (Real-Time)
