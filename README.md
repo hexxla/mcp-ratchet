@@ -68,10 +68,10 @@ Using the Go MCP SDK, wrap your tool handler with ratchet validation:
 ```go
 import (
     "context"
-    "fmt"
+    "log/slog"
 
     "github.com/modelcontextprotocol/go-sdk/mcp"
-    ratchetDomain "github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
+    ratchetMCP "github.com/hexxla/mcp-ratchet/pkg/ratchet/mcp"
     ratchetPorts "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
     ratchetSecondary "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 )
@@ -88,61 +88,70 @@ func myToolHandler(ctx context.Context, req *mcp.CallToolRequest, input MyToolIn
 }
 
 // Register tool with ratchet wrapping
-func RegisterMyTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, sessionStore ratchetSecondary.SessionStore) {
-    originalHandler := myToolHandler
+func RegisterMyTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, sessionStore ratchetSecondary.SessionStore, log *slog.Logger) {
+    handler := myToolHandler
 
-    // Wrap with ratchet validation
-    wrappedHandler := func(ctx context.Context, req *mcp.CallToolRequest, input MyToolInput) (*mcp.CallToolResult, MyToolOutput, error) {
-        // Derive session ID from request context, authentication, or conversation ID
-        // For demo purposes, you might use a fixed session ID, but in production:
-        // - Extract from request headers (e.g., user ID, conversation ID)
-        // - Use request metadata or correlation ID
-        // - Derive from authentication context
-        sessionID := ratchetDomain.SessionID("session-123")
-
-        // Get or create session
-        session, err := sessionStore.Get(ctx, sessionID)
-        if err != nil {
-            session = ratchetDomain.NewSession(sessionID)
-            sessionStore.Create(ctx, session)
-        }
-
-        // Get existing token for this tool
-        var token ratchetDomain.TokenValue
-        if tokens, ok := session.Tokens["my_tool"]; ok && len(tokens) > 0 {
-            token = tokens[len(tokens)-1]
-        }
-
-        // Validate tool call
-        err = ratchet.ValidateToolCall(ctx, sessionID, "my_tool", token)
-        if err != nil {
-            return nil, MyToolOutput{}, fmt.Errorf("ratchet validation failed: %w", err)
-        }
-
-        // Execute original handler
-        result, output, err := originalHandler(ctx, req, input)
-        if err != nil {
-            return result, output, err
-        }
-
-        // Issue token after successful execution
-        _, err = ratchet.IssueToken(ctx, sessionID, "my_tool")
-        if err != nil {
-            return result, output, fmt.Errorf("failed to issue token: %w", err)
-        }
-
-        // Update session
-        session.RecordToolCall("my_tool")
-        sessionStore.Update(ctx, session)
-
-        return result, output, nil
+    // Wrap with ratchet validation in one line
+    // This handles: session management, token validation, prerequisite consumption,
+    // token issuance, and session updates automatically
+    if ratchet != nil {
+        handler = ratchetMCP.WrapWithRatchet("my_tool", handler, ratchet, sessionStore, log)
     }
 
     // Register wrapped tool with MCP SDK
     mcp.AddTool(server, &mcp.Tool{
         Name:        "my_tool",
         Description: "Description of your tool",
-    }, wrappedHandler)
+    }, handler)
+}
+```
+
+#### Advanced: Manual Wrapping
+
+For custom session ID derivation or fine-grained control, you can implement wrapping manually:
+
+```go
+import (
+    "context"
+    "fmt"
+
+    "github.com/modelcontextprotocol/go-sdk/mcp"
+    ratchetDomain "github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
+)
+
+func manualWrap(ctx context.Context, req *mcp.CallToolRequest, input MyToolInput,
+    originalHandler MyToolHandler, ratchet RatchetService, sessionStore SessionStore) (*mcp.CallToolResult, MyToolOutput, error) {
+
+    // Custom session ID derivation from request context
+    sessionID := deriveSessionIDFromRequest(req) // e.g., from headers, auth, etc.
+
+    // Get or create session
+    session, err := sessionStore.Get(ctx, sessionID)
+    if err != nil {
+        session = ratchetDomain.NewSession(sessionID)
+        sessionStore.Create(ctx, session)
+    }
+
+    // Validate and execute
+    var token ratchetDomain.TokenValue
+    if tokens, ok := session.Tokens["my_tool"]; ok && len(tokens) > 0 {
+        token = tokens[len(tokens)-1]
+    }
+
+    if err := ratchet.ValidateToolCall(ctx, sessionID, "my_tool", token); err != nil {
+        return nil, MyToolOutput{}, fmt.Errorf("ratchet validation failed: %w", err)
+    }
+
+    result, output, err := originalHandler(ctx, req, input)
+    if err != nil {
+        return result, output, err
+    }
+
+    // Consume prerequisite and issue new token
+    ratchet.ConsumePrerequisiteToken(ctx, sessionID, "my_tool")
+    ratchet.IssueToken(ctx, sessionID, "my_tool")
+
+    return result, output, nil
 }
 ```
 
