@@ -49,9 +49,8 @@ func run(log *slog.Logger) error {
 		sessionStore = adapters.NewMemorySessionStore()
 		randomGen := adapters.NewCryptoRandomGenerator()
 		clock := adapters.NewRealClock()
-		ratchetSvc = ratchetServices.NewRatchetService(configLoader, tokenStore, sessionStore, randomGen, clock)
 
-		// Load configuration
+		// Load full configuration (rules + observability)
 		configFile, err := os.Open(*ratchetConfig)
 		if err != nil {
 			return fmt.Errorf("failed to open ratchet config: %w", err)
@@ -62,11 +61,29 @@ func run(log *slog.Logger) error {
 			}
 		}()
 
-		_, err = ratchetSvc.LoadConfiguration(context.Background(), configFile)
+		fullCfg, err := configLoader.LoadConfig(context.Background(), configFile)
 		if err != nil {
 			return fmt.Errorf("failed to load ratchet configuration: %w", err)
 		}
-		log.Info("Ratchet configuration loaded", "config", *ratchetConfig)
+
+		// Create event store based on observability config
+		eventStore, err := adapters.NewEventStore(fullCfg.Observability)
+		if err != nil {
+			return fmt.Errorf("failed to create event store: %w", err)
+		}
+		if eventStore != nil {
+			log.Info("Ratchet observability enabled", "storage_type", fullCfg.Observability.StorageType)
+		}
+
+		ratchetSvc = ratchetServices.NewRatchetServiceWithObservability(configLoader, tokenStore, sessionStore, randomGen, clock, eventStore)
+
+		// Register rules from loaded config
+		for _, rule := range fullCfg.Rules {
+			if err := ratchetSvc.RegisterRule(context.Background(), rule); err != nil {
+				return fmt.Errorf("failed to register rule for tool %s: %w", rule.Tool, err)
+			}
+		}
+		log.Info("Ratchet configuration loaded", "config", *ratchetConfig, "rules", len(fullCfg.Rules))
 	}
 
 	// Create MCP server (primary adapter)

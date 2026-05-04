@@ -2,6 +2,14 @@
 # Defines tool dependencies for MCP tools
 # A tool cannot be called unless its prerequisite has been completed
 
+# Observability: capture ratchet lifecycle events for visibility
+# storage_type: memory (default), hexxladb, sql
+# retention_days: 0 = keep all events
+observability:
+  enabled: true
+  storage_type: memory
+  retention_days: 0
+
 rules:
   # greet tool has no prerequisites (can be called first)
   - tool: greet

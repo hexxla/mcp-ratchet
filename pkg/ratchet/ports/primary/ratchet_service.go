@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
+	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 )
 
 // RatchetService defines the primary port for ratchet operations
@@ -27,4 +28,12 @@ type RatchetService interface {
 
 	// GetRequiredPrerequisite returns the prerequisite tool for a given tool
 	GetRequiredPrerequisite(tool domain.ToolName) (domain.ToolName, error)
+
+	// GetObservabilityStats returns aggregate event metrics.
+	// Returns nil stats without error if observability is disabled.
+	GetObservabilityStats(ctx context.Context) (*domain.EventStats, error)
+
+	// GetObservabilityEvents retrieves events for a session matching the given filter.
+	// Returns an empty slice without error if observability is disabled.
+	GetObservabilityEvents(ctx context.Context, sessionID domain.SessionID, filter *secondary.EventFilter) ([]*domain.Event, error)
 }

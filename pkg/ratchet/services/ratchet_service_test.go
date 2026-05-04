@@ -385,6 +385,91 @@ func TestRatchetServiceImpl_ConsumePrerequisiteToken_OneTimeUse(t *testing.T) {
 	}
 }
 
+func TestRatchetServiceImpl_ObservabilityEvents(t *testing.T) {
+	ctx := context.Background()
+	sessionID := domain.SessionID("obs-session")
+
+	eventStore := adapters.NewMemoryEventStore(0)
+	sessionStore := adapters.NewMemorySessionStore()
+	tokenStore := adapters.NewMemoryTokenStore()
+
+	service := NewRatchetServiceWithObservability(
+		adapters.NewYAMLConfigLoader(),
+		tokenStore,
+		sessionStore,
+		adapters.NewCryptoRandomGenerator(),
+		adapters.NewRealClock(),
+		eventStore,
+	)
+
+	// Register a rule
+	rule := domain.Rule{Tool: "tool_b", Prerequisite: "tool_a", Expiry: time.Minute}
+	_ = service.RegisterRule(ctx, rule)
+
+	// Create session
+	session := domain.NewSession(sessionID)
+	_ = sessionStore.Create(ctx, session)
+
+	// Attempt tool_b without prerequisite — should emit failure event
+	_ = service.ValidateToolCall(ctx, sessionID, "tool_b", "")
+
+	stats, err := service.GetObservabilityStats(ctx)
+	if err != nil {
+		t.Fatalf("GetObservabilityStats() error = %v", err)
+	}
+	if stats.EventsByType[domain.EventTypeToolCallAttempt] != 1 {
+		t.Errorf("want 1 tool_call_attempt event, got %d", stats.EventsByType[domain.EventTypeToolCallAttempt])
+	}
+	if stats.EventsByType[domain.EventTypeToolCallFailure] != 1 {
+		t.Errorf("want 1 tool_call_failure event, got %d", stats.EventsByType[domain.EventTypeToolCallFailure])
+	}
+
+	// Issue a token for tool_a and record the call, then validate tool_b
+	session, _ = sessionStore.Get(ctx, sessionID)
+	session.RecordToolCall("tool_a")
+	_ = sessionStore.Update(ctx, session)
+	_, _ = service.IssueToken(ctx, sessionID, "tool_a")
+
+	_ = service.ValidateToolCall(ctx, sessionID, "tool_b", "")
+
+	stats, _ = service.GetObservabilityStats(ctx)
+	if stats.EventsByType[domain.EventTypeToolCallSuccess] != 1 {
+		t.Errorf("want 1 tool_call_success event, got %d", stats.EventsByType[domain.EventTypeToolCallSuccess])
+	}
+	if stats.TokensIssued != 1 {
+		t.Errorf("want 1 token issued, got %d", stats.TokensIssued)
+	}
+}
+
+func TestRatchetServiceImpl_ObservabilityDisabled(t *testing.T) {
+	ctx := context.Background()
+	service := NewRatchetService(
+		adapters.NewYAMLConfigLoader(),
+		adapters.NewMemoryTokenStore(),
+		adapters.NewMemorySessionStore(),
+		adapters.NewCryptoRandomGenerator(),
+		adapters.NewRealClock(),
+	)
+
+	// Stats should be nil without error when observability disabled
+	stats, err := service.GetObservabilityStats(ctx)
+	if err != nil {
+		t.Fatalf("GetObservabilityStats() error = %v, want nil", err)
+	}
+	if stats != nil {
+		t.Errorf("GetObservabilityStats() = %v, want nil when disabled", stats)
+	}
+
+	// Events should be empty without error when observability disabled
+	events, err := service.GetObservabilityEvents(ctx, "any-session", nil)
+	if err != nil {
+		t.Fatalf("GetObservabilityEvents() error = %v, want nil", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("GetObservabilityEvents() returned %d events, want 0 when disabled", len(events))
+	}
+}
+
 // mockClock implements the Clock interface for testing
 type mockClock struct {
 	now time.Time

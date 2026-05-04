@@ -22,7 +22,8 @@ func NewYAMLConfigLoader() secondary.ConfigLoader {
 
 // config represents the YAML structure
 type config struct {
-	Rules []ruleConfig `yaml:"rules"`
+	Rules         []ruleConfig               `yaml:"rules"`
+	Observability domain.ObservabilityConfig `yaml:"observability"`
 }
 
 type ruleConfig struct {
@@ -31,6 +32,45 @@ type ruleConfig struct {
 	Expiry       string `yaml:"expiry"`
 	ErrorMessage string `yaml:"error_message"`
 	OneTimeUse   bool   `yaml:"one_time_use"`
+}
+
+// LoadConfig loads the full ratchet configuration including observability settings.
+func (y *YAMLConfigLoader) LoadConfig(ctx context.Context, source io.Reader) (*secondary.RatchetConfig, error) {
+	var cfg config
+	if err := yaml.NewDecoder(source).Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to decode YAML: %w", err)
+	}
+
+	rules := make([]domain.Rule, 0, len(cfg.Rules))
+	for _, rc := range cfg.Rules {
+		expiry := 5 * time.Minute
+		if rc.Expiry != "" {
+			d, err := time.ParseDuration(rc.Expiry)
+			if err != nil {
+				return nil, fmt.Errorf("invalid expiry duration for tool %s: %w", rc.Tool, err)
+			}
+			expiry = d
+		}
+
+		rule := domain.Rule{
+			Tool:         domain.ToolName(rc.Tool),
+			Prerequisite: domain.ToolName(rc.Prerequisite),
+			Expiry:       expiry,
+			ErrorMessage: rc.ErrorMessage,
+			OneTimeUse:   rc.OneTimeUse,
+		}
+
+		if err := rule.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid rule for tool %s: %w", rc.Tool, err)
+		}
+
+		rules = append(rules, rule)
+	}
+
+	return &secondary.RatchetConfig{
+		Rules:         rules,
+		Observability: cfg.Observability,
+	}, nil
 }
 
 // Load loads rules from YAML
