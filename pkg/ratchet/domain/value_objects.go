@@ -4,6 +4,9 @@ import (
 	"errors"
 )
 
+// MinTokenLength is the minimum required length for token values.
+const MinTokenLength = 32
+
 // ToolName identifies an MCP tool
 type ToolName string
 
@@ -20,7 +23,7 @@ type TokenValue string
 
 // Validate checks if the token value is valid.
 func (t TokenValue) Validate() error {
-	if len(t) < 32 {
+	if len(t) < MinTokenLength {
 		return errors.New("token must be at least 32 characters")
 	}
 	return nil

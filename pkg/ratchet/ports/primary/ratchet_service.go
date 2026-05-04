@@ -15,6 +15,10 @@ type RatchetService interface {
 	// ValidateToolCall checks if a tool can be called
 	ValidateToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error
 
+	// ConsumePrerequisiteToken consumes the prerequisite token for one-time-use rules.
+	// Should be called after successful tool execution.
+	ConsumePrerequisiteToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) error
+
 	// IssueToken creates a new ratchet token after successful execution
 	IssueToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) (domain.TokenValue, error)
 

@@ -18,7 +18,8 @@ func NewCryptoRandomGenerator() secondary.RandomGenerator {
 
 // GenerateToken generates a cryptographically secure random token
 func (c *CryptoRandomGenerator) GenerateToken() (domain.TokenValue, error) {
-	bytes := make([]byte, 16) // 32 hex characters
+	// Generate enough bytes to produce MinTokenLength hex characters (2 hex chars per byte)
+	bytes := make([]byte, domain.MinTokenLength/2)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}

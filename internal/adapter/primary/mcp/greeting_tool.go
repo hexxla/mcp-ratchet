@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -25,8 +26,7 @@ func RegisterGreetingTool(server *mcp.Server, greeting primary.GreetingService, 
 			log.DebugContext(ctx, "greet tool invoked", "name", input.Name)
 		}
 
-		domainReq := domain.GreetingRequest{}
-		domainReq.SetName(input.Name)
+		domainReq := domain.GreetingRequest{Name: input.Name}
 		resp, err := greeting.Greet(ctx, domainReq)
 		if err != nil {
 			return nil, domain.GreetingResponse{}, err
@@ -34,7 +34,7 @@ func RegisterGreetingTool(server *mcp.Server, greeting primary.GreetingService, 
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: resp.GetMessage()},
+				&mcp.TextContent{Text: resp.Message},
 			},
 		}, domain.GreetingResponse{}, nil
 	}
@@ -71,6 +71,11 @@ func RegisterGreetingTool(server *mcp.Server, greeting primary.GreetingService, 
 			result, resp, err := originalHandler(ctx, req, input)
 			if err != nil {
 				return result, resp, err
+			}
+
+			// Consume prerequisite token for one-time-use rules after successful execution
+			if err := ratchet.ConsumePrerequisiteToken(ctx, sessionID, "greet"); err != nil {
+				log.WarnContext(ctx, "failed to consume prerequisite token", "error", err)
 			}
 
 			// Issue token after successful execution (this retrieves and updates the session)
@@ -118,7 +123,7 @@ func RegisterGetUserNameTool(server *mcp.Server, user primary.UserService, ratch
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: resp.GetUserName()},
+				&mcp.TextContent{Text: resp.UserName},
 			},
 		}, domain.UserIdentificationResponse{}, nil
 	}
@@ -155,6 +160,11 @@ func RegisterGetUserNameTool(server *mcp.Server, user primary.UserService, ratch
 			result, resp, err := originalHandler(ctx, req, input)
 			if err != nil {
 				return result, resp, err
+			}
+
+			// Consume prerequisite token for one-time-use rules after successful execution
+			if err := ratchet.ConsumePrerequisiteToken(ctx, sessionID, "get_user_name"); err != nil {
+				log.WarnContext(ctx, "failed to consume prerequisite token", "error", err)
 			}
 
 			// Issue token after successful execution (this retrieves and updates the session)
@@ -198,7 +208,7 @@ func RegisterGetTimeTool(server *mcp.Server, ratchet ratchetPorts.RatchetService
 			log.DebugContext(ctx, "get_time tool invoked")
 		}
 
-		resp := getTimeResponse{Time: "2026-05-02T15:00:00Z"}
+		resp := getTimeResponse{Time: time.Now().UTC().Format(time.RFC3339)}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: resp.Time},
@@ -238,6 +248,11 @@ func RegisterGetTimeTool(server *mcp.Server, ratchet ratchetPorts.RatchetService
 			result, resp, err := originalHandler(ctx, req, input)
 			if err != nil {
 				return result, resp, err
+			}
+
+			// Consume prerequisite token for one-time-use rules after successful execution
+			if err := ratchet.ConsumePrerequisiteToken(ctx, sessionID, "get_time"); err != nil {
+				log.WarnContext(ctx, "failed to consume prerequisite token", "error", err)
 			}
 
 			// Issue token after successful execution (this retrieves and updates the session)
@@ -281,7 +296,7 @@ func RegisterGetDateTool(server *mcp.Server, ratchet ratchetPorts.RatchetService
 			log.DebugContext(ctx, "get_date tool invoked")
 		}
 
-		resp := getDateResponse{Date: "2026-05-02"}
+		resp := getDateResponse{Date: time.Now().UTC().Format("2006-01-02")}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: resp.Date},
@@ -321,6 +336,11 @@ func RegisterGetDateTool(server *mcp.Server, ratchet ratchetPorts.RatchetService
 			result, resp, err := originalHandler(ctx, req, input)
 			if err != nil {
 				return result, resp, err
+			}
+
+			// Consume prerequisite token for one-time-use rules after successful execution
+			if err := ratchet.ConsumePrerequisiteToken(ctx, sessionID, "get_date"); err != nil {
+				log.WarnContext(ctx, "failed to consume prerequisite token", "error", err)
 			}
 
 			// Issue token after successful execution (this retrieves and updates the session)

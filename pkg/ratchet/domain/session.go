@@ -13,13 +13,20 @@ type Session struct {
 	CreatedAt   time.Time
 }
 
-// NewSession creates a new session with the given ID.
+// NewSession creates a new session with the given ID using the current time.
+// For testable code, prefer NewSessionWithTime.
 func NewSession(id SessionID) *Session {
+	return NewSessionWithTime(id, time.Now())
+}
+
+// NewSessionWithTime creates a new session with the given ID and creation time.
+// This allows tests to inject specific times for deterministic testing.
+func NewSessionWithTime(id SessionID, createdAt time.Time) *Session {
 	return &Session{
 		ID:          id,
 		Tokens:      make(map[ToolName][]TokenValue),
 		ToolHistory: make([]ToolName, 0),
-		CreatedAt:   time.Now(),
+		CreatedAt:   createdAt,
 	}
 }
 

@@ -30,7 +30,7 @@ func (m *MemorySessionStore) Create(ctx context.Context, session *domain.Session
 	return nil
 }
 
-// Get retrieves a session
+// Get retrieves a session (returns a copy to enforce proper Update() usage)
 func (m *MemorySessionStore) Get(ctx context.Context, id domain.SessionID) (*domain.Session, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -39,7 +39,15 @@ func (m *MemorySessionStore) Get(ctx context.Context, id domain.SessionID) (*dom
 	if !ok {
 		return nil, secondary.ErrSessionNotFound
 	}
-	return session, nil
+
+	// Return a shallow copy to prevent direct mutation of stored session
+	// Caller must use Update() to persist changes
+	return &domain.Session{
+		ID:          session.ID,
+		Tokens:      session.Tokens,
+		ToolHistory: session.ToolHistory,
+		CreatedAt:   session.CreatedAt,
+	}, nil
 }
 
 // Update updates a session

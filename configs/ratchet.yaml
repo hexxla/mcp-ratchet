@@ -15,7 +15,7 @@ rules:
     prerequisite: greet
     expiry: 15s
     error_message: "You must call the 'greet' tool before calling 'get_user_name'. Please call greet first to establish the required session."
-    one_time_use: false
+    one_time_use: true
 
   # get_time requires get_user_name to be called first (chain dependency)
   - tool: get_time

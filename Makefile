@@ -87,9 +87,6 @@ clean-llm-all:
 
 clean-llm: clean-llm-all
 
-# Alias
-clean-llm: clean-llm-all
-
 install:
 	go install ./cmd/mcp-ratchet-demo
 

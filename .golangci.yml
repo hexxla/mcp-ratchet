@@ -35,8 +35,7 @@ linters:
           files:
             - internal/core/services/**/*.go
           deny:
-            - pkg: "github.com/sploitzberg/mcp-ratchet/internal/adapte\
-                r"
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter"
               desc: "core/services/ must not depend on adapter/ (use ports instead)"
 
         # Rule 3: core/ports/ must remain clean
@@ -44,8 +43,7 @@ linters:
           files:
             - internal/core/ports/**/*.go
           deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/(adapt\
-                er|core/services)"
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/(adapter|core/services)"
               desc: "core/ports/ must not depend on adapter or services"
 
         # Rule 4: primary adapters should be clean
@@ -53,8 +51,7 @@ linters:
           files:
             - internal/adapter/primary/**/*.go
           deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/(core/servi\
-                ces|adapter/secondary)"
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/(core/services|adapter/secondary)"
               desc: "primary adapters should only depend on core/domain and core/ports"
 
         # Rule 5: secondary adapters should not depend on primary adapters
@@ -62,9 +59,7 @@ linters:
           files:
             - internal/adapter/secondary/**/*.go
           deny:
-            - pkg:
-                "github.com/sploitzberg/go-llm-project-structure/internal/adapte\
-                r/primary"
+            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter/primary"
               desc: "secondary adapters should not depend on primary adapters"
 
     gocritic:

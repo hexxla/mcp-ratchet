@@ -20,9 +20,7 @@ func (s *GreetingServiceImpl) Greet(ctx context.Context, req domain.GreetingRequ
 	if err := req.Validate(); err != nil {
 		return domain.GreetingResponse{}, err
 	}
-	resp := domain.GreetingResponse{}
-	resp.SetMessage(req.Greet())
-	return resp, nil
+	return domain.GreetingResponse{Message: req.Greet()}, nil
 }
 
 // UserServiceImpl implements the UserService interface
@@ -35,7 +33,5 @@ func NewUserService() primary.UserService {
 
 // IdentifyUser identifies the current user
 func (s *UserServiceImpl) IdentifyUser(ctx context.Context, req domain.UserIdentificationRequest) (domain.UserIdentificationResponse, error) {
-	resp := domain.UserIdentificationResponse{}
-	resp.SetUserName("DemoUser")
-	return resp, nil
+	return domain.UserIdentificationResponse{UserName: "DemoUser"}, nil
 }

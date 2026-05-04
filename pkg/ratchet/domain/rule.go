@@ -8,11 +8,11 @@ import (
 
 // Rule defines a tool dependency
 type Rule struct {
-	Tool         ToolName
-	Prerequisite ToolName
-	Expiry       time.Duration
-	ErrorMessage string
-	OneTimeUse   bool // If true, token is consumed after use
+	Tool         ToolName      `yaml:"tool"`
+	Prerequisite ToolName      `yaml:"prerequisite"`
+	Expiry       time.Duration `yaml:"expiry"`
+	ErrorMessage string        `yaml:"error_message"`
+	OneTimeUse   bool          `yaml:"one_time_use"` // If true, token is consumed after use
 }
 
 // Validate checks if the rule is valid.

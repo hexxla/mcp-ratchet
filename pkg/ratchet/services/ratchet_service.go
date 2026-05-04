@@ -99,27 +99,6 @@ func (s *RatchetServiceImpl) ValidateToolCall(ctx context.Context, sessionID dom
 			}
 			return domain.ErrInvalidToken
 		}
-
-		// Remove the token after use if the current tool has one_time_use enabled
-		if rule.OneTimeUse {
-			// Remove the last valid token from both session and tokenStore
-			if len(validTokens) > 0 {
-				lastToken := validTokens[len(validTokens)-1]
-				err = s.tokenStore.RemoveToken(ctx, sessionID, rule.Prerequisite, lastToken)
-				if err != nil {
-					return fmt.Errorf("failed to remove token from store: %w", err)
-				}
-				// Also remove from session
-				prereqTokens, hasToken := session.Tokens[rule.Prerequisite]
-				if hasToken && len(prereqTokens) > 0 {
-					session.Tokens[rule.Prerequisite] = prereqTokens[:len(prereqTokens)-1]
-					// Update the session to reflect token removal
-					if err := s.sessionStore.Update(ctx, session); err != nil {
-						return fmt.Errorf("failed to update session after token removal: %w", err)
-					}
-				}
-			}
-		}
 	}
 
 	return nil
@@ -173,6 +152,50 @@ func (s *RatchetServiceImpl) LoadConfiguration(ctx context.Context, config io.Re
 
 	s.rules = rules
 	return rules, nil
+}
+
+// ConsumePrerequisiteToken consumes the prerequisite token for one-time-use rules.
+// Should be called after successful tool execution to consume the prerequisite token.
+func (s *RatchetServiceImpl) ConsumePrerequisiteToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) error {
+	// Find rule for this tool
+	rule := s.findRule(tool)
+	if rule == nil || rule.Prerequisite == "" || !rule.OneTimeUse {
+		// No rule, no prerequisite, or not one-time-use: nothing to consume
+		return nil
+	}
+
+	// Get valid tokens for the prerequisite tool
+	validTokens, err := s.tokenStore.GetValidTokens(ctx, sessionID, rule.Prerequisite)
+	if err != nil {
+		return fmt.Errorf("failed to get valid tokens: %w", err)
+	}
+
+	if len(validTokens) == 0 {
+		// Token already consumed or expired - this is okay, just nothing to do
+		return nil
+	}
+
+	// Remove the last valid token from tokenStore
+	lastToken := validTokens[len(validTokens)-1]
+	if err := s.tokenStore.RemoveToken(ctx, sessionID, rule.Prerequisite, lastToken); err != nil {
+		return fmt.Errorf("failed to remove token from store: %w", err)
+	}
+
+	// Also remove from session
+	session, err := s.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	prereqTokens, hasToken := session.Tokens[rule.Prerequisite]
+	if hasToken && len(prereqTokens) > 0 {
+		session.Tokens[rule.Prerequisite] = prereqTokens[:len(prereqTokens)-1]
+		if err := s.sessionStore.Update(ctx, session); err != nil {
+			return fmt.Errorf("failed to update session after token removal: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GetRequiredPrerequisite returns the prerequisite tool for a given tool
