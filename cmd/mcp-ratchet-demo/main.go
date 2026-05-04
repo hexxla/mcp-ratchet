@@ -214,7 +214,7 @@ func run(log *slog.Logger) error {
 
 	// Observability endpoints (web UI support)
 	// GET /observability/stats - aggregate statistics
-	// GET /observability/events?session_id=xxx - events for session
+	// GET /observability/events?session_id=<placeholder> - events for session
 	if ratchetSvc != nil {
 		mux.HandleFunc("GET /observability/stats", func(w http.ResponseWriter, r *http.Request) {
 			stats, err := ratchetSvc.GetObservabilityStats(r.Context())

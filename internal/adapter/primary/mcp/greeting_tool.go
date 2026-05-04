@@ -25,7 +25,8 @@ func RegisterGreetingTool(server *mcp.Server, greeting primary.GreetingService, 
 			log.DebugContext(ctx, "greet tool invoked", "name", input.Name)
 		}
 
-		domainReq := domain.GreetingRequest{Name: input.Name}
+		domainReq := domain.GreetingRequest{}
+		domainReq.SetName(input.Name)
 		resp, err := greeting.Greet(ctx, domainReq)
 		if err != nil {
 			return nil, domain.GreetingResponse{}, err
@@ -33,7 +34,7 @@ func RegisterGreetingTool(server *mcp.Server, greeting primary.GreetingService, 
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: resp.Message},
+				&mcp.TextContent{Text: resp.Message()},
 			},
 		}, domain.GreetingResponse{}, nil
 	}
@@ -65,7 +66,7 @@ func RegisterGetUserNameTool(server *mcp.Server, user primary.UserService, ratch
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: resp.UserName},
+				&mcp.TextContent{Text: resp.UserName()},
 			},
 		}, domain.UserIdentificationResponse{}, nil
 	}

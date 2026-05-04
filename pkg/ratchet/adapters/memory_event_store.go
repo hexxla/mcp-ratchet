@@ -12,6 +12,8 @@ import (
 
 const pruneInterval = 5 * time.Minute
 
+type stopSignal chan bool
+
 // MemoryEventStore implements EventStore using in-memory storage.
 // It is safe for concurrent use and suitable for demos and testing.
 // When retentionDays > 0, a background goroutine prunes expired events every 5 minutes.
@@ -20,7 +22,7 @@ type MemoryEventStore struct {
 	mu            sync.RWMutex
 	events        []*domain.Event
 	retentionDays int
-	stopCh        chan struct{}
+	stopCh        stopSignal
 }
 
 // NewMemoryEventStore creates a new in-memory event store.
@@ -30,7 +32,7 @@ func NewMemoryEventStore(retentionDays int) secondary.EventStore {
 	m := &MemoryEventStore{
 		events:        make([]*domain.Event, 0),
 		retentionDays: retentionDays,
-		stopCh:        make(chan struct{}),
+		stopCh:        make(stopSignal, 1),
 	}
 
 	if retentionDays > 0 {

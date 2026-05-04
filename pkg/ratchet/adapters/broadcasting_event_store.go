@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
@@ -43,7 +44,7 @@ func NewBroadcastingEventStore(base secondary.EventStore, broadcaster EventBroad
 func (b *BroadcastingEventStore) Store(ctx context.Context, event *domain.Event) error {
 	// Store first
 	if err := b.base.Store(ctx, event); err != nil {
-		return err
+		return fmt.Errorf("failed to store event: %w", err)
 	}
 	// Broadcast after successful store
 	if b.broadcaster != nil {
