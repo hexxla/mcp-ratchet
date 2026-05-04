@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -122,12 +124,57 @@ func run(log *slog.Logger) error {
 		})
 
 		mux.HandleFunc("GET /observability/events", func(w http.ResponseWriter, r *http.Request) {
-			sessionID := ratchetDomain.SessionID(r.URL.Query().Get("session_id"))
-			events, err := ratchetSvc.GetObservabilityEvents(r.Context(), sessionID, nil)
+			q := r.URL.Query()
+			sessionID := ratchetDomain.SessionID(q.Get("session_id"))
+
+			// Build filter from query params
+			filter := &ratchetSecondary.EventFilter{}
+
+			// ?event_type=tool_call_failure,token_created (comma-separated)
+			if raw := q.Get("event_type"); raw != "" {
+				for t := range strings.SplitSeq(raw, ",") {
+					filter.EventTypes = append(filter.EventTypes, ratchetDomain.EventType(strings.TrimSpace(t)))
+				}
+			}
+
+			// ?tool_name=greet,get_user_name (comma-separated)
+			if raw := q.Get("tool_name"); raw != "" {
+				for t := range strings.SplitSeq(raw, ",") {
+					filter.ToolNames = append(filter.ToolNames, ratchetDomain.ToolName(strings.TrimSpace(t)))
+				}
+			}
+
+			// ?limit=50 (default 100)
+			filter.Limit = 100
+			if raw := q.Get("limit"); raw != "" {
+				if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+					filter.Limit = n
+				}
+			}
+
+			// ?offset=0 (pagination via EventFilter.Offset, applied post-query)
+			offset := 0
+			if raw := q.Get("offset"); raw != "" {
+				if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+					offset = n
+				}
+			}
+
+			// Fetch with limit+offset to allow slicing
+			filter.Limit += offset
+			events, err := ratchetSvc.GetObservabilityEvents(r.Context(), sessionID, filter)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("failed to get events: %v", err), http.StatusInternalServerError)
 				return
 			}
+
+			// Apply offset
+			if offset > 0 && offset < len(events) {
+				events = events[offset:]
+			} else if offset >= len(events) {
+				events = []*ratchetDomain.Event{}
+			}
+
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(events); err != nil {
 				log.Warn("failed to encode events", "error", err)

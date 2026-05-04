@@ -26,6 +26,9 @@ type RatchetService interface {
 	// LoadConfiguration loads rules from YAML
 	LoadConfiguration(ctx context.Context, config io.Reader) ([]domain.Rule, error)
 
+	// CreateSession creates a new session and emits a session_created observability event.
+	CreateSession(ctx context.Context, sessionID domain.SessionID) (*domain.Session, error)
+
 	// GetRequiredPrerequisite returns the prerequisite tool for a given tool
 	GetRequiredPrerequisite(tool domain.ToolName) (domain.ToolName, error)
 

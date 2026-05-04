@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
@@ -244,6 +246,16 @@ func (s *RatchetServiceImpl) ConsumePrerequisiteToken(ctx context.Context, sessi
 	return nil
 }
 
+// CreateSession creates a new session and emits a session_created observability event.
+func (s *RatchetServiceImpl) CreateSession(ctx context.Context, sessionID domain.SessionID) (*domain.Session, error) {
+	session := domain.NewSession(sessionID)
+	if err := s.sessionStore.Create(ctx, session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+	s.emitEvent(ctx, domain.EventTypeSessionCreated, sessionID, "", "", nil)
+	return session, nil
+}
+
 // GetRequiredPrerequisite returns the prerequisite tool for a given tool
 func (s *RatchetServiceImpl) GetRequiredPrerequisite(tool domain.ToolName) (domain.ToolName, error) {
 	rule := s.findRule(tool)
@@ -279,7 +291,7 @@ func (s *RatchetServiceImpl) emitEvent(ctx context.Context, eventType domain.Eve
 	}
 
 	event := &domain.Event{
-		ID:        domain.EventID(fmt.Sprintf("%s-%s-%d", eventType, tool, s.clock.Now().UnixNano())),
+		ID:        domain.EventID(uuid.New().String()),
 		Type:      eventType,
 		SessionID: sessionID,
 		ToolName:  tool,

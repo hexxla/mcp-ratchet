@@ -10,20 +10,42 @@ import (
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 )
 
+const pruneInterval = 5 * time.Minute
+
 // MemoryEventStore implements EventStore using in-memory storage.
 // It is safe for concurrent use and suitable for demos and testing.
+// When retentionDays > 0, a background goroutine prunes expired events every 5 minutes.
+// Call Stop() to release the background goroutine on shutdown.
 type MemoryEventStore struct {
 	mu            sync.RWMutex
 	events        []*domain.Event
 	retentionDays int
+	stopCh        chan struct{}
 }
 
 // NewMemoryEventStore creates a new in-memory event store.
 // retentionDays controls how long events are kept; 0 means keep all events.
+// When retentionDays > 0, a background pruning goroutine is started — call Stop() to clean up.
 func NewMemoryEventStore(retentionDays int) secondary.EventStore {
-	return &MemoryEventStore{
+	m := &MemoryEventStore{
 		events:        make([]*domain.Event, 0),
 		retentionDays: retentionDays,
+		stopCh:        make(chan struct{}),
+	}
+
+	if retentionDays > 0 {
+		go m.runPruner()
+	}
+
+	return m
+}
+
+// Stop stops the background pruning goroutine. Safe to call multiple times.
+func (m *MemoryEventStore) Stop() {
+	select {
+	case <-m.stopCh:
+	default:
+		close(m.stopCh)
 	}
 }
 
@@ -31,14 +53,38 @@ func NewMemoryEventStore(retentionDays int) secondary.EventStore {
 func (m *MemoryEventStore) Store(_ context.Context, event *domain.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	m.events = append(m.events, event)
-
-	if m.retentionDays > 0 {
-		m.pruneExpired()
-	}
-
 	return nil
+}
+
+// runPruner runs in a background goroutine, pruning expired events on a fixed interval.
+func (m *MemoryEventStore) runPruner() {
+	ticker := time.NewTicker(pruneInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.mu.Lock()
+			m.pruneExpired()
+			m.mu.Unlock()
+		case <-m.stopCh:
+			return
+		}
+	}
+}
+
+// pruneExpired removes events older than retentionDays.
+// Must be called with m.mu held (write lock).
+func (m *MemoryEventStore) pruneExpired() {
+	cutoff := time.Now().AddDate(0, 0, -m.retentionDays)
+	kept := m.events[:0]
+	for _, e := range m.events {
+		if e.Timestamp.After(cutoff) {
+			kept = append(kept, e)
+		}
+	}
+	m.events = kept
 }
 
 // GetEvents retrieves events for a session matching the given filter.
@@ -93,19 +139,6 @@ func (m *MemoryEventStore) GetStats(_ context.Context) (*domain.EventStats, erro
 	stats.ActiveSessions = len(sessions)
 
 	return stats, nil
-}
-
-// pruneExpired removes events older than retentionDays.
-// Must be called with m.mu held (write lock).
-func (m *MemoryEventStore) pruneExpired() {
-	cutoff := time.Now().AddDate(0, 0, -m.retentionDays)
-	kept := m.events[:0]
-	for _, e := range m.events {
-		if e.Timestamp.After(cutoff) {
-			kept = append(kept, e)
-		}
-	}
-	m.events = kept
 }
 
 // matchesFilter returns true if the event matches the filter criteria.

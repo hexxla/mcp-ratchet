@@ -40,14 +40,16 @@ func WrapWithRatchet[In any, Out any](
 		// Generate simple session ID from request (for demo, use fixed session)
 		sessionID := domain.SessionID("demo-session")
 
-		// Get or create session
+		// Get or create session — creation goes through ratchet service to emit session_created event
 		s, err := sessionStore.Get(ctx, sessionID)
 		if err != nil {
-			s = domain.NewSession(sessionID)
-			if createErr := sessionStore.Create(ctx, s); createErr != nil {
+			var createErr error
+			s, createErr = ratchet.CreateSession(ctx, sessionID)
+			if createErr != nil {
 				if log != nil {
 					log.WarnContext(ctx, "failed to create session", "error", createErr)
 				}
+				s = domain.NewSession(sessionID)
 			}
 		}
 
