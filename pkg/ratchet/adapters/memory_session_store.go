@@ -59,10 +59,15 @@ func (m *MemorySessionStore) Update(ctx context.Context, session *domain.Session
 	return nil
 }
 
-// Delete deletes a session
+// Delete deletes a session.
+// Returns ErrSessionNotFound if the session does not exist.
 func (m *MemorySessionStore) Delete(ctx context.Context, id domain.SessionID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if _, ok := m.sessions[id]; !ok {
+		return secondary.ErrSessionNotFound
+	}
 
 	delete(m.sessions, id)
 	return nil

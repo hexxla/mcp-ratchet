@@ -70,27 +70,28 @@ func (m *MemoryTokenStore) GetValidTokens(ctx context.Context, sessionID domain.
 	return validTokens, nil
 }
 
-// RemoveToken removes a specific token
+// RemoveToken removes a specific token.
+// Returns ErrTokenNotFound if the token does not exist.
 func (m *MemoryTokenStore) RemoveToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	sessionTokens, ok := m.tokens[sessionID]
 	if !ok {
-		return nil
+		return secondary.ErrTokenNotFound
 	}
 
 	toolTokens, ok := sessionTokens[tool]
 	if !ok {
-		return nil
+		return secondary.ErrTokenNotFound
 	}
 
 	for i, entry := range toolTokens {
 		if entry.value == token {
 			m.tokens[sessionID][tool] = append(toolTokens[:i], toolTokens[i+1:]...)
-			break
+			return nil
 		}
 	}
 
-	return nil
+	return secondary.ErrTokenNotFound
 }

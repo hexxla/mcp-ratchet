@@ -2,10 +2,14 @@ package secondary
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
 )
+
+// ErrTokenNotFound is returned when a token is not found.
+var ErrTokenNotFound = errors.New("token not found")
 
 // TokenStore stores and retrieves ratchet tokens
 type TokenStore interface {
