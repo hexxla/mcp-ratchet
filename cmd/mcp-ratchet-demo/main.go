@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/hexxla/mcp-ratchet/internal/adapter/primary/mcp"
 	"github.com/hexxla/mcp-ratchet/internal/core/services"
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
+	ratchetDomain "github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
 	ratchetPorts "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
 	ratchetSecondary "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 	ratchetServices "github.com/hexxla/mcp-ratchet/pkg/ratchet/services"
@@ -97,6 +99,43 @@ func run(log *slog.Logger) error {
 	h := mcp.StreamableHTTPHandler(srv, log)
 
 	mux := http.NewServeMux()
+
+	// Observability endpoints (web UI support)
+	// GET /observability/stats - aggregate statistics
+	// GET /observability/events?session_id=xxx - events for session
+	if ratchetSvc != nil {
+		mux.HandleFunc("GET /observability/stats", func(w http.ResponseWriter, r *http.Request) {
+			stats, err := ratchetSvc.GetObservabilityStats(r.Context())
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to get stats: %v", err), http.StatusInternalServerError)
+				return
+			}
+			if stats == nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "observability disabled"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(stats); err != nil {
+				log.Warn("failed to encode stats", "error", err)
+			}
+		})
+
+		mux.HandleFunc("GET /observability/events", func(w http.ResponseWriter, r *http.Request) {
+			sessionID := ratchetDomain.SessionID(r.URL.Query().Get("session_id"))
+			events, err := ratchetSvc.GetObservabilityEvents(r.Context(), sessionID, nil)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to get events: %v", err), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(events); err != nil {
+				log.Warn("failed to encode events", "error", err)
+			}
+		})
+	}
+
+	// MCP endpoint
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
 		mux.Handle(method+" "+*path, h)
 	}
@@ -113,6 +152,9 @@ func run(log *slog.Logger) error {
 	errServe := make(chan error, 1)
 	go func() {
 		log.Info("MCP demo server listening", "addr", *addr, "path", *path, "version", version)
+		if ratchetSvc != nil {
+			log.Info("Observability endpoints available", "stats", "/observability/stats", "events", "/observability/events")
+		}
 		errServe <- httpSrv.ListenAndServe()
 	}()
 

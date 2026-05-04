@@ -244,6 +244,178 @@ Sessions are identified by a `SessionID` (string) that you provide in your appli
 - Request ID or correlation ID
 - Any unique identifier for the session/workflow
 
+## Observability
+
+mcp-ratchet captures lifecycle events for visibility into tool usage patterns, token flow, and validation failures. Events are **non-intrusive** — they are emitted as side-effects and never affect core ratchet behavior.
+
+### Enabling Observability
+
+Add the `observability` section to your YAML configuration:
+
+```yaml
+observability:
+  enabled: true
+  storage_type: memory # Options: memory, hexxladb, sql
+  retention_days: 7 # 0 = keep all events
+
+rules:
+  - tool: greet
+    prerequisite: ""
+    expiry: 5m
+```
+
+### Captured Events
+
+| Event Type          | Triggered When               | Data Included                        |
+| ------------------- | ---------------------------- | ------------------------------------ |
+| `tool_call_attempt` | Tool validation starts       | SessionID, ToolName, Token           |
+| `tool_call_success` | Tool validation passes       | SessionID, ToolName                  |
+| `tool_call_failure` | Tool validation fails        | SessionID, ToolName, Error message   |
+| `token_created`     | Token issued after execution | SessionID, ToolName, Token, Expiry   |
+| `token_consumed`    | One-time-use token consumed  | SessionID, ToolName, Token, Consumer |
+| `session_created`   | New session initialized      | SessionID                            |
+
+### Service Layer Integration
+
+Import mcp-ratchet and use the observability-enabled constructor:
+
+```go
+import (
+    "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
+    ratchetDomain "github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
+    ratchetPorts "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
+    ratchetSecondary "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
+    ratchetServices "github.com/hexxla/mcp-ratchet/pkg/ratchet/services"
+)
+
+// Load configuration (includes observability settings)
+configLoader := adapters.NewYAMLConfigLoader()
+fullCfg, err := configLoader.LoadConfig(ctx, configFile)
+
+// Create EventStore from factory (memory, hexxladb, or sql)
+eventStore, err := adapters.NewEventStore(fullCfg.Observability)
+
+// Initialize service with observability
+ratchetSvc := ratchetServices.NewRatchetServiceWithObservability(
+    configLoader,
+    adapters.NewMemoryTokenStore(),
+    adapters.NewMemorySessionStore(),
+    adapters.NewCryptoRandomGenerator(),
+    adapters.NewRealClock(),
+    eventStore,  // nil = disabled
+)
+```
+
+### Querying Events
+
+Your service layer can query captured events for dashboards, debugging, or analytics:
+
+```go
+// Get aggregate statistics
+stats, _ := ratchetSvc.GetObservabilityStats(ctx)
+fmt.Printf("Total events: %d, Tokens issued: %d, Failures: %d\n",
+    stats.TotalEvents, stats.TokensIssued, stats.EventsByType["tool_call_failure"])
+
+// Get events for a specific session
+events, _ := ratchetSvc.GetObservabilityEvents(ctx, sessionID, &ratchetSecondary.EventFilter{
+    EventTypes: []ratchetDomain.EventType{
+        ratchetDomain.EventTypeToolCallFailure,
+    },
+    Limit: 10,
+})
+
+for _, e := range events {
+    fmt.Printf("%s: %s failed - %v\n", e.Timestamp, e.ToolName, e.Metadata["error"])
+}
+```
+
+### Custom Event Store (Database Integration)
+
+Implement the `EventStore` interface for your database:
+
+```go
+// HexxlaDBEventStore implements EventStore for HexxlaDB
+type HexxlaDBEventStore struct {
+    client *hexxladb.Client
+    config ratchetDomain.ObservabilityConfig
+}
+
+func (h *HexxlaDBEventStore) Store(ctx context.Context, event *ratchetDomain.Event) error {
+    // Store event as a cell in HexxlaDB
+    cell := hexxladb.Cell{
+        Tags: []string{"ratchet_event", string(event.Type)},
+        Data: event,
+    }
+    return h.client.PutCell(ctx, cell)
+}
+
+func (h *HexxlaDBEventStore) GetEvents(ctx context.Context,
+    sessionID ratchetDomain.SessionID,
+    filter *ratchetSecondary.EventFilter) ([]*ratchetDomain.Event, error) {
+    // Query cells by tags and session
+    return h.client.QueryCells(ctx, hexxladb.Query{
+        Tags: []string{"ratchet_event"},
+        SessionID: string(sessionID),
+    })
+}
+
+func (h *HexxlaDBEventStore) GetStats(ctx context.Context) (*ratchetDomain.EventStats, error) {
+    // Aggregate from stored cells
+    // ... implementation
+}
+```
+
+Register in the factory:
+
+```go
+func NewEventStore(cfg ratchetDomain.ObservabilityConfig, hexxlaClient *hexxladb.Client) (ratchetSecondary.EventStore, error) {
+    if !cfg.Enabled {
+        return nil, nil
+    }
+    switch cfg.StorageType {
+    case "memory":
+        return NewMemoryEventStore(cfg.RetentionDays), nil
+    case "hexxladb":
+        return NewHexxlaDBEventStore(hexxlaClient, cfg), nil
+    default:
+        return nil, fmt.Errorf("unsupported storage_type: %s", cfg.StorageType)
+    }
+}
+```
+
+### HTTP Endpoint (Web UI)
+
+Add an HTTP endpoint to expose events for a web UI:
+
+```go
+// ObservabilityHandler serves ratchet events via HTTP
+type ObservabilityHandler struct {
+    ratchetSvc ratchetPorts.RatchetService
+}
+
+func (h *ObservabilityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    switch r.URL.Path {
+    case "/observability/stats":
+        stats, err := h.ratchetSvc.GetObservabilityStats(r.Context())
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        json.NewEncoder(w).Encode(stats)
+
+    case "/observability/events":
+        sessionID := r.URL.Query().Get("session_id")
+        events, err := h.ratchetSvc.GetObservabilityEvents(r.Context(),
+            ratchetDomain.SessionID(sessionID), nil)
+        if err != nil {
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        json.NewEncoder(w).Encode(events)
+    }
+}
+```
+
 ## Best Practices
 
 ### Rule Configuration
