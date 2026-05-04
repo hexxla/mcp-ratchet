@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"gopkg.in/yaml.v3"
 
 	"github.com/hexxla/mcp-ratchet/internal/adapter/primary/mcp"
 	"github.com/hexxla/mcp-ratchet/internal/core/services"
@@ -68,9 +69,52 @@ func (b *eventBroadcaster) unsubscribe(sessionID ratchetDomain.SessionID, conn *
 	}
 }
 
-// Production implementations should add a broadcast method here and wire it
-// into the EventStore or RatchetService to push events to WebSocket clients.
-// See observability-improvements.md plan for details.
+// Broadcast implements EventBroadcaster interface.
+// Sends the event to all WebSocket clients subscribed to this session.
+func (b *eventBroadcaster) Broadcast(sessionID ratchetDomain.SessionID, event *ratchetDomain.Event) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	conns := b.connections[sessionID]
+	for conn := range conns {
+		_ = conn.WriteJSON(event) // Best-effort broadcast
+	}
+}
+
+// MCPConfig holds server-level configuration (separate from ratchet core config).
+// These settings control how the MCP server exposes ratchet functionality.
+type MCPConfig struct {
+	Observability struct {
+		HTTPEnabled      bool   `yaml:"http_enabled"`
+		WebSocketEnabled bool   `yaml:"websocket_enabled"`
+		WebSocketPath    string `yaml:"websocket_path"`
+	} `yaml:"observability"`
+	Server struct {
+		Addr    string `yaml:"addr"`
+		MCPPath string `yaml:"mcp_path"`
+	} `yaml:"server"`
+}
+
+func loadMCPConfig(path string) (*MCPConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read MCP config: %w", err)
+	}
+	var cfg MCPConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse MCP config: %w", err)
+	}
+	// Set defaults
+	if cfg.Observability.WebSocketPath == "" {
+		cfg.Observability.WebSocketPath = "/observability/stream"
+	}
+	if cfg.Server.Addr == "" {
+		cfg.Server.Addr = ":8080"
+	}
+	if cfg.Server.MCPPath == "" {
+		cfg.Server.MCPPath = "/mcp"
+	}
+	return &cfg, nil
+}
 
 var version = "dev"
 
@@ -86,7 +130,18 @@ func run(log *slog.Logger) error {
 	addr := flag.String("addr", ":8080", "address to listen on")
 	path := flag.String("path", "/mcp", "MCP server path")
 	ratchetConfig := flag.String("ratchet-config", "", "path to ratchet YAML config file (optional)")
+	mcpConfig := flag.String("mcp-config", "configs/mcp-config.yaml", "path to MCP server config file")
 	flag.Parse()
+
+	// Load MCP server config (observability HTTP/WebSocket settings)
+	mcpCfg, err := loadMCPConfig(*mcpConfig)
+	if err != nil {
+		log.Warn("failed to load MCP config, using defaults", "error", err)
+		mcpCfg = &MCPConfig{}
+		mcpCfg.Observability.WebSocketPath = "/observability/stream"
+		mcpCfg.Server.Addr = *addr
+		mcpCfg.Server.MCPPath = *path
+	}
 
 	// Create service layer (implements primary ports)
 	greetingService := services.NewGreetingService()
@@ -95,7 +150,7 @@ func run(log *slog.Logger) error {
 	// Initialize ratchet service if config provided
 	var ratchetSvc ratchetPorts.RatchetService
 	var sessionStore ratchetSecondary.SessionStore
-	var observabilityCfg ratchetDomain.ObservabilityConfig
+	var broadcaster *eventBroadcaster
 	if *ratchetConfig != "" {
 		configLoader := adapters.NewYAMLConfigLoader()
 		tokenStore := adapters.NewMemoryTokenStore()
@@ -118,13 +173,18 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("failed to load ratchet configuration: %w", err)
 		}
-		observabilityCfg = fullCfg.Observability
 
-		// Create event store based on observability config
-		eventStore, err := adapters.NewEventStore(fullCfg.Observability)
-		if err != nil {
-			return fmt.Errorf("failed to create event store: %w", err)
+		// Create base event store
+		baseStore := adapters.NewMemoryEventStore(fullCfg.Observability.RetentionDays)
+
+		// If WebSocket enabled, wrap with broadcaster for real-time streaming
+		eventStore := ratchetSecondary.EventStore(baseStore)
+		if mcpCfg.Observability.WebSocketEnabled {
+			broadcaster = newEventBroadcaster()
+			eventStore = adapters.NewBroadcastingEventStore(baseStore, broadcaster)
+			log.Info("WebSocket broadcasting enabled")
 		}
+
 		if eventStore != nil {
 			log.Info("Ratchet observability enabled", "storage_type", fullCfg.Observability.StorageType)
 		}
@@ -234,11 +294,9 @@ func run(log *slog.Logger) error {
 
 	// WebSocket streaming endpoint (real-time events)
 	// Connect with: wscat -c "ws://localhost:8080/observability/stream?session_id=demo-session"
-	var broadcaster *eventBroadcaster
-	if ratchetSvc != nil && observabilityCfg.WebSocketEnabled {
-		broadcaster = newEventBroadcaster()
-
-		mux.HandleFunc("GET /observability/stream", func(w http.ResponseWriter, r *http.Request) {
+	// Note: broadcaster is already wired via BroadcastingEventStore wrapper above
+	if ratchetSvc != nil && mcpCfg.Observability.WebSocketEnabled && broadcaster != nil {
+		mux.HandleFunc("GET "+mcpCfg.Observability.WebSocketPath, func(w http.ResponseWriter, r *http.Request) {
 			sessionID := ratchetDomain.SessionID(r.URL.Query().Get("session_id"))
 			if sessionID == "" {
 				http.Error(w, "session_id required", http.StatusBadRequest)
@@ -280,9 +338,7 @@ func run(log *slog.Logger) error {
 			log.Info("websocket client disconnected", "session_id", sessionID)
 		})
 
-		log.Info("WebSocket streaming enabled", "endpoint", "/observability/stream")
-		log.Info("Note: broadcaster not wired to event source in demo mode - production should wrap EventStore or service to broadcast")
-		_ = broadcaster // TODO: Wire broadcaster to event source for production use
+		log.Info("WebSocket streaming enabled", "endpoint", mcpCfg.Observability.WebSocketPath)
 	}
 
 	// MCP endpoint

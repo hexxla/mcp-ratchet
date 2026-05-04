@@ -1,0 +1,22 @@
+# MCP Server Configuration
+# These settings control how the MCP server exposes ratchet functionality.
+# This is SEPARATE from ratchet core configuration - it controls the
+# HTTP/WebSocket presentation layer, not the ratchet behavior itself.
+
+observability:
+  # Enable HTTP REST endpoints (/observability/stats, /observability/events)
+  http_enabled: true
+
+  # Enable WebSocket streaming for real-time events
+  websocket_enabled: true
+
+  # WebSocket endpoint path
+  websocket_path: "/observability/stream"
+
+# Server-level settings
+server:
+  # Address to listen on
+  addr: ":8080"
+
+  # MCP endpoint path
+  mcp_path: "/mcp"
