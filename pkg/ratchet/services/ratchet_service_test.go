@@ -470,6 +470,76 @@ func TestRatchetServiceImpl_ObservabilityDisabled(t *testing.T) {
 	}
 }
 
+func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T) {
+	sessionStore := adapters.NewMemorySessionStore()
+	tokenStore := adapters.NewMemoryTokenStore()
+	service := NewRatchetService(
+		adapters.NewYAMLConfigLoader(),
+		tokenStore,
+		sessionStore,
+		adapters.NewCryptoRandomGenerator(),
+		adapters.NewRealClock(),
+	)
+
+	ctx := context.Background()
+
+	// ToolC can be called after ToolA OR ToolB (two rules, OR logic)
+	rules := []domain.Rule{
+		{Tool: "ToolC", Prerequisite: "ToolA", Expiry: 5 * time.Minute, ErrorMessage: "need ToolA or ToolB"},
+		{Tool: "ToolC", Prerequisite: "ToolB", Expiry: 5 * time.Minute, ErrorMessage: "need ToolA or ToolB"},
+	}
+	for _, r := range rules {
+		if err := service.RegisterRule(ctx, r); err != nil {
+			t.Fatalf("RegisterRule: %v", err)
+		}
+	}
+
+	sessionID := domain.SessionID("test-or-session")
+
+	t.Run("fails when neither prerequisite called", func(t *testing.T) {
+		session := domain.NewSession(sessionID)
+		if err := sessionStore.Create(ctx, session); err != nil {
+			t.Fatalf("Create session: %v", err)
+		}
+		err := service.ValidateToolCall(ctx, sessionID, "ToolC", "")
+		if err == nil {
+			t.Error("expected error when no prerequisite called")
+		}
+	})
+
+	t.Run("succeeds when only ToolB called (second rule satisfied)", func(t *testing.T) {
+		// Reset session with ToolB called
+		session := domain.NewSession(sessionID)
+		session.RecordToolCall("ToolB")
+		if err := sessionStore.Update(ctx, session); err != nil {
+			t.Fatalf("Update session: %v", err)
+		}
+		_, err := service.IssueToken(ctx, sessionID, "ToolB")
+		if err != nil {
+			t.Fatalf("IssueToken: %v", err)
+		}
+		if err := service.ValidateToolCall(ctx, sessionID, "ToolC", ""); err != nil {
+			t.Errorf("expected success when ToolB called, got: %v", err)
+		}
+	})
+
+	t.Run("succeeds when only ToolA called (first rule satisfied)", func(t *testing.T) {
+		sessionID2 := domain.SessionID("test-or-session-2")
+		session := domain.NewSession(sessionID2)
+		session.RecordToolCall("ToolA")
+		if err := sessionStore.Create(ctx, session); err != nil {
+			t.Fatalf("Create session: %v", err)
+		}
+		_, err := service.IssueToken(ctx, sessionID2, "ToolA")
+		if err != nil {
+			t.Fatalf("IssueToken: %v", err)
+		}
+		if err := service.ValidateToolCall(ctx, sessionID2, "ToolC", ""); err != nil {
+			t.Errorf("expected success when ToolA called, got: %v", err)
+		}
+	})
+}
+
 // mockClock implements the Clock interface for testing
 type mockClock struct {
 	now time.Time

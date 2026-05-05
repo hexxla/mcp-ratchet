@@ -74,78 +74,87 @@ func (s *RatchetServiceImpl) RegisterRule(ctx context.Context, rule domain.Rule)
 	return nil
 }
 
-// ValidateToolCall checks if a tool can be called
+// ValidateToolCall checks if a tool can be called.
+// When multiple rules exist for the same tool, ANY satisfied rule allows the call (OR logic).
 func (s *RatchetServiceImpl) ValidateToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
 	s.emitEvent(ctx, domain.EventTypeToolCallAttempt, sessionID, tool, token, nil)
 
-	// Find rule for this tool
-	rule := s.findRule(tool)
-	if rule == nil {
+	// Collect all rules for this tool
+	rules := s.findRules(tool)
+	if len(rules) == 0 {
 		// No rule means tool is unrestricted
 		s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
 		return nil
 	}
 
-	// If tool has no prerequisites and no session, allow it (for demo/testing)
-	if rule.Prerequisite == "" && sessionID == "" {
-		s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-		return nil
+	// If any rule has no prerequisite, the tool is always allowed (free-pass rule)
+	for _, rule := range rules {
+		if rule.Prerequisite == "" {
+			s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
+			return nil
+		}
 	}
 
-	// For demo: if tool has prerequisites but no session, return custom error message
-	if rule.Prerequisite != "" && sessionID == "" {
+	// All remaining rules require a prerequisite; no session means all fail
+	if sessionID == "" {
 		var validationErr error
-		if rule.ErrorMessage != "" {
-			validationErr = errors.New(rule.ErrorMessage)
+		if rules[0].ErrorMessage != "" {
+			validationErr = errors.New(rules[0].ErrorMessage)
 		} else {
-			validationErr = fmt.Errorf("tool %s requires a session and prerequisite %s", tool, rule.Prerequisite)
+			validationErr = fmt.Errorf("tool %s requires a session", tool)
 		}
 		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": validationErr.Error()})
 		return validationErr
 	}
 
-	// Get session (only if we have a sessionID)
+	// Get session
 	session, err := s.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": err.Error()})
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	// Check if prerequisite has been called
-	if rule.Prerequisite != "" && !session.HasToolBeenCalled(rule.Prerequisite) {
-		var validationErr error
-		if rule.ErrorMessage != "" {
-			validationErr = errors.New(rule.ErrorMessage)
-		} else {
-			validationErr = fmt.Errorf("prerequisite tool %s must be called first", rule.Prerequisite)
+	// Check each rule: pass if ANY prerequisite has been called with a valid token
+	var lastErr error
+	for _, rule := range rules {
+		if rule.Prerequisite == "" {
+			// Free-pass rule — already handled above but guard for safety
+			s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
+			return nil
 		}
-		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": validationErr.Error()})
-		return validationErr
-	}
 
-	// Check if prerequisite tool has a valid token
-	if rule.Prerequisite != "" {
-		// Check token expiry using tokenStore
+		if !session.HasToolBeenCalled(rule.Prerequisite) {
+			if rule.ErrorMessage != "" {
+				lastErr = errors.New(rule.ErrorMessage)
+			} else {
+				lastErr = fmt.Errorf("prerequisite tool %s must be called first", rule.Prerequisite)
+			}
+			continue
+		}
+
+		// Prerequisite was called — verify valid token exists
 		validTokens, err := s.tokenStore.GetValidTokens(ctx, sessionID, rule.Prerequisite)
 		if err != nil {
-			s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": err.Error()})
-			return fmt.Errorf("failed to get valid tokens: %w", err)
+			lastErr = fmt.Errorf("failed to get valid tokens: %w", err)
+			continue
+		}
+		if len(validTokens) == 0 {
+			if rule.ErrorMessage != "" {
+				lastErr = errors.New(rule.ErrorMessage)
+			} else {
+				lastErr = domain.ErrInvalidToken
+			}
+			continue
 		}
 
-		if len(validTokens) == 0 {
-			var validationErr error
-			if rule.ErrorMessage != "" {
-				validationErr = errors.New(rule.ErrorMessage)
-			} else {
-				validationErr = domain.ErrInvalidToken
-			}
-			s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": validationErr.Error()})
-			return validationErr
-		}
+		// This rule is satisfied — allow the call
+		s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
+		return nil
 	}
 
-	s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-	return nil
+	// No rule was satisfied
+	s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": lastErr.Error()})
+	return lastErr
 }
 
 // IssueToken creates a new ratchet token after successful execution
@@ -305,7 +314,18 @@ func (s *RatchetServiceImpl) emitEvent(ctx context.Context, eventType domain.Eve
 	}
 }
 
-// findRule finds the rule for a given tool
+// findRules returns all rules registered for a given tool.
+func (s *RatchetServiceImpl) findRules(tool domain.ToolName) []domain.Rule {
+	var matched []domain.Rule
+	for _, r := range s.rules {
+		if r.Tool == tool {
+			matched = append(matched, r)
+		}
+	}
+	return matched
+}
+
+// findRule finds the first rule for a given tool (used for expiry/token lookup).
 func (s *RatchetServiceImpl) findRule(tool domain.ToolName) *domain.Rule {
 	for i := range s.rules {
 		if s.rules[i].Tool == tool {

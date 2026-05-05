@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	u := url.URL{Scheme: "ws", Host: "localhost:8080", Path: "/observability/stream"}
+	u := url.URL{Scheme: "ws", Host: "localhost:8787", Path: "/observability/stream"}
 	u.RawQuery = "session_id=demo-session"
 	log.Printf("connecting to %s", u.String())
 
