@@ -21,11 +21,15 @@ func NewMemorySessionStore() secondary.SessionStore {
 	}
 }
 
-// Create creates a new session
+// Create creates a new session. Returns ErrSessionAlreadyExists if a session
+// with the same ID already exists (use Update to overwrite).
 func (m *MemorySessionStore) Create(ctx context.Context, session *domain.Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if _, ok := m.sessions[session.ID]; ok {
+		return secondary.ErrSessionAlreadyExists
+	}
 	m.sessions[session.ID] = session
 	return nil
 }

@@ -256,7 +256,16 @@ func (s *RatchetServiceImpl) ConsumePrerequisiteToken(ctx context.Context, sessi
 }
 
 // CreateSession creates a new session and emits a session_created observability event.
+// If the session already exists, returns the existing session (idempotent).
 func (s *RatchetServiceImpl) CreateSession(ctx context.Context, sessionID domain.SessionID) (*domain.Session, error) {
+	// Try to get existing session first
+	existingSession, err := s.sessionStore.Get(ctx, sessionID)
+	if err == nil {
+		// Session already exists, return it
+		return existingSession, nil
+	}
+
+	// Session doesn't exist, create a new one
 	session := domain.NewSession(sessionID)
 	if err := s.sessionStore.Create(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
