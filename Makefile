@@ -1,6 +1,6 @@
 # Makefile for MCP Ratchet
 
-.PHONY: help build test test-all integration lint fmt ci clean install run run-ws-test tidy vet update govulncheck \
+.PHONY: help build test lint fmt ci clean install run run-ws-test tidy vet update govulncheck \
 	build-linux build-darwin build-windows build-all
 
 # Bare `make` runs the full CI pipeline (same as `make ci`). Use `make help` to list targets.
@@ -41,40 +41,28 @@ build-all: build-linux build-darwin build-windows
 test:
 	go test -race -count=1 ./...
 
-test-all:
-	@echo "Running unit tests..."
-	@go test -race -count=1 ./...
-	@echo ""
-	@echo "Running integration tests..."
-	@go test -race -count=1 -tags=integration ./...
-
-integration:
-	go test -count=1 -race -tags=integration ./...
-
 lint:
-	golangci-lint run --timeout=5m
+	./scripts/tool.sh golangci-lint run ./...
 
 fmt:
 	gofmt -l -s -w .
 	goimports -l -w . 2>/dev/null || true
 
 ci:
-	./scripts/ci/ci.sh
+	./scripts/ci.sh
 
 install:
 	go install ./cmd/mcp-ratchet-demo
 
 help:
 	@echo "Available targets:"
-	@echo "  make ci              Full pipeline (same as GitHub Actions: ./scripts/ci/ci.sh)"
+	@echo "  make ci              Shared CI validation checks (./scripts/ci.sh)"
 	@echo "  make build           Build the CLI binary for host OS"
 	@echo "  make build-all       Cross-compile for linux/darwin/windows (amd64)"
 	@echo "  make build-linux     Cross-compile for linux/amd64"
 	@echo "  make build-darwin    Cross-compile for darwin/amd64"
 	@echo "  make build-windows   Cross-compile for windows/amd64"
 	@echo "  make test            Run tests"
-	@echo "  make test-all        Run both unit and integration tests"
-	@echo "  make integration     Run integration tests (slower, external dependencies)"
 	@echo "  make lint            Run golangci-lint"
 	@echo "  make fmt             Format code"
 	@echo "  make govulncheck     Vulnerability scan only"
@@ -100,7 +88,7 @@ vet:
 	go vet ./...
 
 govulncheck:
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	./scripts/tool.sh govulncheck ./...
 
 update:
 	go get -u ./...

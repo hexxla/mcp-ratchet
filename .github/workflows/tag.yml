@@ -1,0 +1,35 @@
+name: Module tag
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate module tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the commit belongs to main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install the pinned secret scanner
+        run: scripts/tool.sh install-gitleaks
+      - name: Scan the validated commit
+        run: scripts/tool.sh gitleaks git --redact=100 --log-opts="-1 HEAD --diff-merges=first-parent"
+      - name: Run required checks
+        run: scripts/ci.sh

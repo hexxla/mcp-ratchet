@@ -28,9 +28,17 @@ This ensures LLMs follow the correct workflow every time, with clear error messa
 
 ## Quick Start
 
+Use Go 1.27.3 or newer.
+
 ```bash
 go get github.com/hexxla/mcp-ratchet
 ```
+
+The library is distributed through Go module tags. The
+[module tag workflow](.github/workflows/tag.yml) validates tags reachable
+from `main`. Verify CI on `main` before pushing a version tag. To build the
+demonstration binary locally, run `make build`.
+
 
 ## Usage
 

@@ -9,8 +9,8 @@
 ## Go and verification
 
 - Use the Go version declared in `go.mod`. Follow the surrounding code and `.golangci.yml`. Wrap error causes with `%w` where callers need to inspect them.
-- Run focused package tests first. Use `make test` for unit tests, `make integration` for integration tests, and `make ci` before pushing. Coverage checks use `COVERAGE_THRESHOLD` when enabled.
-- Use the [repository Git hooks](.githooks/README.md) if installed. Keep commit subjects short and follow Conventional Commits.
+- Run focused package tests first. Use `make test` for race tests and `make ci` before pushing.
+- The [optional Git hook](.githooks/README.md) scans staged changes for secrets. Keep commit subjects short and follow Conventional Commits.
 
 ## Mosaic integration
 
