@@ -23,16 +23,19 @@ type MemoryEventStore struct {
 	events        []*domain.Event
 	retentionDays int
 	stopCh        stopSignal
+	stop          func()
 }
 
 // NewMemoryEventStore creates a new in-memory event store.
 // retentionDays controls how long events are kept; 0 means keep all events.
 // When retentionDays > 0, a background pruning goroutine is started — call Stop() to clean up.
 func NewMemoryEventStore(retentionDays int) secondary.EventStore {
+	stopCh := make(stopSignal, 1)
 	m := &MemoryEventStore{
 		events:        make([]*domain.Event, 0),
 		retentionDays: retentionDays,
-		stopCh:        make(stopSignal, 1),
+		stopCh:        stopCh,
+		stop:          sync.OnceFunc(func() { close(stopCh) }),
 	}
 
 	if retentionDays > 0 {
@@ -42,13 +45,9 @@ func NewMemoryEventStore(retentionDays int) secondary.EventStore {
 	return m
 }
 
-// Stop stops the background pruning goroutine. Safe to call multiple times.
+// Stop signals the background pruning goroutine to stop. Concurrent calls are safe.
 func (m *MemoryEventStore) Stop() {
-	select {
-	case <-m.stopCh:
-	default:
-		close(m.stopCh)
-	}
+	m.stop()
 }
 
 // Store persists an event in memory.
@@ -80,13 +79,9 @@ func (m *MemoryEventStore) runPruner() {
 // Must be called with m.mu held (write lock).
 func (m *MemoryEventStore) pruneExpired() {
 	cutoff := time.Now().AddDate(0, 0, -m.retentionDays)
-	kept := m.events[:0]
-	for _, e := range m.events {
-		if e.Timestamp.After(cutoff) {
-			kept = append(kept, e)
-		}
-	}
-	m.events = kept
+	m.events = slices.DeleteFunc(m.events, func(event *domain.Event) bool {
+		return !event.Timestamp.After(cutoff)
+	})
 }
 
 // GetEvents retrieves events for a session matching the given filter.

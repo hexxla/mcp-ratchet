@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/url"
@@ -9,8 +10,19 @@ import (
 )
 
 func main() {
-	u := url.URL{Scheme: "ws", Host: "localhost:8787", Path: "/observability/stream"}
-	u.RawQuery = "session_id=demo-session"
+	endpoint := flag.String("url", "ws://127.0.0.1:8080/observability/stream", "demo WebSocket URL")
+	session := flag.String("session", "", "MCP session ID")
+	flag.Parse()
+	if *session == "" {
+		log.Fatal("-session is required")
+	}
+	u, err := url.Parse(*endpoint)
+	if err != nil {
+		log.Fatal("URL: ", err)
+	}
+	query := u.Query()
+	query.Set("session_id", *session)
+	u.RawQuery = query.Encode()
 	log.Printf("connecting to %s", u.String())
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)

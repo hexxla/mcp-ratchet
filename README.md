@@ -114,54 +114,11 @@ func RegisterMyTool(server *mcp.Server, ratchet ratchetPorts.RatchetService, ses
 }
 ```
 
-#### Advanced: Manual Wrapping
+#### Custom transports
 
-For custom session ID derivation or fine-grained control, you can implement wrapping manually:
+Use the service's [WorkflowExecutor](pkg/ratchet/ports/primary/ratchet_service.go) with a stable, isolated transport session ID. The callback reports both handler errors and application-level failure. The service selects and reserves one-time alternatives before invoking the callback and records successful execution afterwards.
 
-```go
-import (
-    "context"
-    "fmt"
-
-    "github.com/modelcontextprotocol/go-sdk/mcp"
-    ratchetDomain "github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
-)
-
-func manualWrap(ctx context.Context, req *mcp.CallToolRequest, input MyToolInput,
-    originalHandler MyToolHandler, ratchet RatchetService, sessionStore SessionStore) (*mcp.CallToolResult, MyToolOutput, error) {
-
-    // Custom session ID derivation from request context
-    sessionID := deriveSessionIDFromRequest(req) // e.g., from headers, auth, etc.
-
-    // Get or create session
-    session, err := sessionStore.Get(ctx, sessionID)
-    if err != nil {
-        session = ratchetDomain.NewSession(sessionID)
-        sessionStore.Create(ctx, session)
-    }
-
-    // Validate and execute
-    var token ratchetDomain.TokenValue
-    if tokens, ok := session.Tokens["my_tool"]; ok && len(tokens) > 0 {
-        token = tokens[len(tokens)-1]
-    }
-
-    if err := ratchet.ValidateToolCall(ctx, sessionID, "my_tool", token); err != nil {
-        return nil, MyToolOutput{}, fmt.Errorf("ratchet validation failed: %w", err)
-    }
-
-    result, output, err := originalHandler(ctx, req, input)
-    if err != nil {
-        return result, output, err
-    }
-
-    // Consume prerequisite and issue new token
-    ratchet.ConsumePrerequisiteToken(ctx, sessionID, "my_tool")
-    ratchet.IssueToken(ctx, sessionID, "my_tool")
-
-    return result, output, nil
-}
-```
+The public MCP wrapper requires a transport that exposes a session ID, such as stateful Streamable HTTP. For transports that omit IDs, supply a session identity through your own adapter and call the workflow port directly. The wrapper's legacy store and logger arguments remain accepted for source compatibility.
 
 ### YAML Configuration
 
@@ -210,16 +167,7 @@ Each tool validates against its direct prerequisite only.
 
 ### MCP Tool Agnostic
 
-The Ratchet package is framework-agnostic - it doesn't depend on any specific MCP SDK or tool system. It provides two main methods:
-
-- `ValidateToolCall(ctx, sessionID, toolName, token)` - Validates prerequisites and token validity
-- `IssueToken(ctx, sessionID, toolName)` - Issues a token after successful tool execution
-
-Your tool system (MCP server, gRPC service, HTTP API, CLI tool, etc.) integrates with ratchet by:
-
-1. Providing a session ID for tracking
-2. Calling `ValidateToolCall()` before tool execution
-3. Calling `IssueToken()` after successful execution
+Ratchet's service is framework-agnostic. Transport adapters call `WorkflowExecutor.ExecuteToolCall` with the session ID, tool name and callback. The service handles the session, reservation and completion as one workflow.
 
 ### Default Behavior
 
@@ -421,7 +369,7 @@ observability:
   websocket_path: "/observability/stream"
 
 server:
-  addr: ":8080"
+  addr: "127.0.0.1:8080"
   mcp_path: "/mcp"
 ```
 
@@ -447,6 +395,8 @@ eventStore, err := adapters.NewEventStore(cfg,
 
 This enables any EventStore implementation without modifying the factory code.
 
+The demo binds to a loopback IP and redacts token values and event metadata from its HTTP and WebSocket output. Use the session ID from the MCP transport to filter demo events. Run `MCP_SESSION_ID=<id> make run-ws-test` to watch that session.
+
 ### Background Pruning
 
 The `MemoryEventStore` automatically prunes expired events in the background when `retention_days > 0`:
@@ -469,7 +419,7 @@ All events are assigned collision-safe UUIDs for production use:
 {
   "ID": "e6d23263-9266-43a6-bf8d-dac08c75ea8b",
   "Type": "tool_call_success",
-  "SessionID": "demo-session",
+  "SessionID": "<mcp-session-id>",
   ...
 }
 ```
@@ -563,13 +513,13 @@ func (h *ObservabilityHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 ```bash
 # Get all events for a session
-curl "http://localhost:8080/observability/events?session_id=demo-session"
+curl "http://localhost:8080/observability/events?session_id=$MCP_SESSION_ID"
 
 # Get only failures, last 10
-curl "http://localhost:8080/observability/events?session_id=demo-session&event_type=tool_call_failure&limit=10"
+curl "http://localhost:8080/observability/events?session_id=$MCP_SESSION_ID&event_type=tool_call_failure&limit=10"
 
 # Get events for specific tool, page 2 (10 per page)
-curl "http://localhost:8080/observability/events?session_id=demo-session&tool_name=greet&limit=10&offset=10"
+curl "http://localhost:8080/observability/events?session_id=$MCP_SESSION_ID&tool_name=greet&limit=10&offset=10"
 ```
 
 ### WebSocket Streaming (Real-Time)

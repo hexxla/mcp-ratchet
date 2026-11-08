@@ -2,6 +2,8 @@ package adapters
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
@@ -30,7 +32,7 @@ func (m *MemorySessionStore) Create(ctx context.Context, session *domain.Session
 	if _, ok := m.sessions[session.ID]; ok {
 		return secondary.ErrSessionAlreadyExists
 	}
-	m.sessions[session.ID] = session
+	m.sessions[session.ID] = cloneSession(session)
 	return nil
 }
 
@@ -44,14 +46,7 @@ func (m *MemorySessionStore) Get(ctx context.Context, id domain.SessionID) (*dom
 		return nil, secondary.ErrSessionNotFound
 	}
 
-	// Return a shallow copy to prevent direct mutation of stored session
-	// Caller must use Update() to persist changes
-	return &domain.Session{
-		ID:          session.ID,
-		Tokens:      session.Tokens,
-		ToolHistory: session.ToolHistory,
-		CreatedAt:   session.CreatedAt,
-	}, nil
+	return cloneSession(session), nil
 }
 
 // Update updates a session
@@ -59,7 +54,7 @@ func (m *MemorySessionStore) Update(ctx context.Context, session *domain.Session
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.sessions[session.ID] = session
+	m.sessions[session.ID] = cloneSession(session)
 	return nil
 }
 
@@ -75,4 +70,15 @@ func (m *MemorySessionStore) Delete(ctx context.Context, id domain.SessionID) er
 
 	delete(m.sessions, id)
 	return nil
+}
+
+// cloneSession detaches both the map and its token slices from the caller.
+func cloneSession(session *domain.Session) *domain.Session {
+	snapshot := *session
+	snapshot.Tokens = maps.Clone(session.Tokens)
+	for tool, tokens := range snapshot.Tokens {
+		snapshot.Tokens[tool] = slices.Clone(tokens)
+	}
+	snapshot.ToolHistory = slices.Clone(session.ToolHistory)
+	return &snapshot
 }

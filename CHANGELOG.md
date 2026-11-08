@@ -14,7 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI pipeline with formatting, linting, tests, and architecture guardrails
 - Comprehensive documentation for each architectural layer
 
+### Fixed
+
+- Isolate MCP calls by transport session and reserve the exact matching one-time prerequisite before the handler. Return detached in-memory session snapshots.
+
+- Make in-memory event store shutdown safe for concurrent callers and release references to expired events during pruning.
+
 ### Changed
+
+- Keep the demo in its command package, bind it to loopback, and redact event tokens and metadata.
+
+- Generate observability event IDs with the standard library's UUID v4 generator.
 
 - **Go toolchain** — require Go 1.27.3 or newer. GitHub Actions uses the version in `go.mod`.
 

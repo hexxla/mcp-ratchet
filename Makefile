@@ -75,7 +75,7 @@ run:
 	go run ./cmd/mcp-ratchet-demo
 
 run-ws-test:
-	go run ./cmd/ws-test
+	go run ./cmd/ws-test -session "$$MCP_SESSION_ID"
 
 clean:
 	rm -rf bin

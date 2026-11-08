@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"log/slog"
+	"slices"
+	"sync"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
@@ -17,13 +19,16 @@ import (
 
 // RatchetServiceImpl implements the RatchetService interface
 type RatchetServiceImpl struct {
-	configLoader secondary.ConfigLoader
-	tokenStore   secondary.TokenStore
-	sessionStore secondary.SessionStore
-	randomGen    secondary.RandomGenerator
-	clock        secondary.Clock
-	rules        []domain.Rule
-	eventStore   secondary.EventStore // Optional, nil disables observability
+	configLoader  secondary.ConfigLoader
+	tokenStore    secondary.TokenStore
+	sessionStore  secondary.SessionStore
+	randomGen     secondary.RandomGenerator
+	clock         secondary.Clock
+	rulesMu       sync.RWMutex
+	rules         []domain.Rule
+	workflowSeed  maphash.Seed
+	workflowLocks [64]sync.Mutex
+	eventStore    secondary.EventStore // Optional, nil disables observability
 }
 
 // NewRatchetService creates a new ratchet service
@@ -40,7 +45,7 @@ func NewRatchetService(
 		sessionStore: sessionStore,
 		randomGen:    randomGen,
 		clock:        clock,
-		rules:        make([]domain.Rule, 0),
+		workflowSeed: maphash.MakeSeed(),
 	}
 }
 
@@ -60,7 +65,7 @@ func NewRatchetServiceWithObservability(
 		sessionStore: sessionStore,
 		randomGen:    randomGen,
 		clock:        clock,
-		rules:        make([]domain.Rule, 0),
+		workflowSeed: maphash.MakeSeed(),
 		eventStore:   eventStore,
 	}
 }
@@ -70,6 +75,8 @@ func (s *RatchetServiceImpl) RegisterRule(ctx context.Context, rule domain.Rule)
 	if err := rule.Validate(); err != nil {
 		return fmt.Errorf("rule validation failed: %w", err)
 	}
+	s.rulesMu.Lock()
+	defer s.rulesMu.Unlock()
 	s.rules = append(s.rules, rule)
 	return nil
 }
@@ -78,87 +85,59 @@ func (s *RatchetServiceImpl) RegisterRule(ctx context.Context, rule domain.Rule)
 // When multiple rules exist for the same tool, ANY satisfied rule allows the call (OR logic).
 func (s *RatchetServiceImpl) ValidateToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
 	s.emitEvent(ctx, domain.EventTypeToolCallAttempt, sessionID, tool, token, nil)
-
-	// Collect all rules for this tool
-	rules := s.findRules(tool)
-	if len(rules) == 0 {
-		// No rule means tool is unrestricted
-		s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-		return nil
-	}
-
-	// If any rule has no prerequisite, the tool is always allowed (free-pass rule)
-	for _, rule := range rules {
-		if rule.Prerequisite == "" {
-			s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-			return nil
-		}
-	}
-
-	// All remaining rules require a prerequisite; no session means all fail
-	if sessionID == "" {
-		var validationErr error
-		if rules[0].ErrorMessage != "" {
-			validationErr = errors.New(rules[0].ErrorMessage)
-		} else {
-			validationErr = fmt.Errorf("tool %s requires a session", tool)
-		}
-		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": validationErr.Error()})
-		return validationErr
-	}
-
-	// Get session
-	session, err := s.sessionStore.Get(ctx, sessionID)
+	_, _, err := s.selectPrerequisite(ctx, sessionID, tool)
 	if err != nil {
 		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": err.Error()})
-		return fmt.Errorf("session not found: %w", err)
+		return err
+	}
+	s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
+	return nil
+}
+
+func (s *RatchetServiceImpl) selectPrerequisite(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) (*domain.Rule, domain.TokenValue, error) {
+	rules := s.findRules(tool)
+	if len(rules) == 0 || slices.ContainsFunc(rules, func(rule domain.Rule) bool { return rule.Prerequisite == "" }) {
+		return nil, "", nil
+	}
+	if sessionID == "" {
+		if rules[0].ErrorMessage != "" {
+			return nil, "", errors.New(rules[0].ErrorMessage)
+		}
+		return nil, "", fmt.Errorf("tool %s requires a session", tool)
+	}
+	session, err := s.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		return nil, "", fmt.Errorf("session not found: %w", err)
 	}
 
-	// Check each rule: pass if ANY prerequisite has been called with a valid token
 	var lastErr error
 	for _, rule := range rules {
-		if rule.Prerequisite == "" {
-			// Free-pass rule — already handled above but guard for safety
-			s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-			return nil
-		}
-
 		if !session.HasToolBeenCalled(rule.Prerequisite) {
-			if rule.ErrorMessage != "" {
-				lastErr = errors.New(rule.ErrorMessage)
-			} else {
-				lastErr = fmt.Errorf("prerequisite tool %s must be called first", rule.Prerequisite)
+			lastErr = fmt.Errorf("prerequisite tool %s must be called first", rule.Prerequisite)
+		} else {
+			tokens, err := s.tokenStore.GetValidTokens(ctx, sessionID, rule.Prerequisite)
+			if err != nil {
+				lastErr = fmt.Errorf("failed to get valid tokens: %w", err)
+				continue
 			}
-			continue
-		}
-
-		// Prerequisite was called — verify valid token exists
-		validTokens, err := s.tokenStore.GetValidTokens(ctx, sessionID, rule.Prerequisite)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to get valid tokens: %w", err)
-			continue
-		}
-		if len(validTokens) == 0 {
-			if rule.ErrorMessage != "" {
-				lastErr = errors.New(rule.ErrorMessage)
-			} else {
-				lastErr = domain.ErrInvalidToken
+			if len(tokens) != 0 {
+				return &rule, tokens[len(tokens)-1], nil
 			}
-			continue
+			lastErr = domain.ErrInvalidToken
 		}
-
-		// This rule is satisfied — allow the call
-		s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, token, nil)
-		return nil
+		if rule.ErrorMessage != "" {
+			lastErr = errors.New(rule.ErrorMessage)
+		}
 	}
-
-	// No rule was satisfied
-	s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, token, map[string]any{"error": lastErr.Error()})
-	return lastErr
+	return nil, "", lastErr
 }
 
 // IssueToken creates a new ratchet token after successful execution
 func (s *RatchetServiceImpl) IssueToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) (domain.TokenValue, error) {
+	return s.issueToken(ctx, sessionID, tool, false)
+}
+
+func (s *RatchetServiceImpl) issueToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, completed bool) (domain.TokenValue, error) {
 	// Find rule for this tool to get expiry
 	rule := s.findRule(tool)
 	expiry := 5 * time.Minute // 5 minutes default
@@ -171,24 +150,23 @@ func (s *RatchetServiceImpl) IssueToken(ctx context.Context, sessionID domain.Se
 		return "", err
 	}
 
-	// Store token
-	err = s.tokenStore.Store(ctx, sessionID, tool, tokenValue, s.clock.Now().Add(expiry))
-	if err != nil {
-		return "", fmt.Errorf("failed to store token: %w", err)
-	}
-
-	// Update session
 	session, err := s.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get session: %w", err)
 	}
-	session.AddToken(tool, tokenValue)
-	err = s.sessionStore.Update(ctx, session)
-	if err != nil {
-		return "", fmt.Errorf("failed to update session: %w", err)
+	expires := s.clock.Now().Add(expiry)
+	if err := s.tokenStore.Store(ctx, sessionID, tool, tokenValue, expires); err != nil {
+		return "", fmt.Errorf("failed to store token: %w", err)
 	}
-
-	s.emitEvent(ctx, domain.EventTypeTokenCreated, sessionID, tool, tokenValue, map[string]any{"expiry": s.clock.Now().Add(expiry).Format(time.RFC3339)})
+	session.AddToken(tool, tokenValue)
+	if completed {
+		session.RecordToolCall(tool)
+	}
+	if err := s.sessionStore.Update(ctx, session); err != nil {
+		cleanupErr := s.tokenStore.RemoveToken(context.WithoutCancel(ctx), sessionID, tool, tokenValue)
+		return "", errors.Join(fmt.Errorf("failed to update session: %w", err), cleanupErr)
+	}
+	s.emitEvent(ctx, domain.EventTypeTokenCreated, sessionID, tool, tokenValue, map[string]any{"expiry": expires.Format(time.RFC3339)})
 
 	return tokenValue, nil
 }
@@ -205,55 +183,80 @@ func (s *RatchetServiceImpl) LoadConfiguration(ctx context.Context, config io.Re
 		return nil, fmt.Errorf("rule validation failed: %w", err)
 	}
 
-	s.rules = rules
+	s.rulesMu.Lock()
+	s.rules = slices.Clone(rules)
+	s.rulesMu.Unlock()
 	return rules, nil
 }
 
 // ConsumePrerequisiteToken consumes the prerequisite token for one-time-use rules.
 // Should be called after successful tool execution to consume the prerequisite token.
 func (s *RatchetServiceImpl) ConsumePrerequisiteToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) error {
-	// Find rule for this tool
-	rule := s.findRule(tool)
-	if rule == nil || rule.Prerequisite == "" || !rule.OneTimeUse {
-		// No rule, no prerequisite, or not one-time-use: nothing to consume
-		return nil
-	}
-
-	// Get valid tokens for the prerequisite tool
-	validTokens, err := s.tokenStore.GetValidTokens(ctx, sessionID, rule.Prerequisite)
+	rule, token, err := s.selectPrerequisite(ctx, sessionID, tool)
 	if err != nil {
-		return fmt.Errorf("failed to get valid tokens: %w", err)
+		return err
 	}
+	return s.consume(ctx, sessionID, tool, rule, token)
+}
 
-	if len(validTokens) == 0 {
-		// Token already consumed or expired - this is okay, just nothing to do
+func (s *RatchetServiceImpl) consume(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, rule *domain.Rule, token domain.TokenValue) error {
+	if rule == nil || !rule.OneTimeUse {
 		return nil
 	}
-
-	// Remove the last valid token from tokenStore
-	lastToken := validTokens[len(validTokens)-1]
-	if err := s.tokenStore.RemoveToken(ctx, sessionID, rule.Prerequisite, lastToken); err != nil {
-		return fmt.Errorf("failed to remove token from store: %w", err)
-	}
-
-	s.emitEvent(ctx, domain.EventTypeTokenConsumed, sessionID, rule.Prerequisite, lastToken, map[string]any{"consumed_by": string(tool)})
-
-	// Also remove from session
 	session, err := s.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
-
-	prereqTokens, hasToken := session.Tokens[rule.Prerequisite]
-	if hasToken && len(prereqTokens) > 0 {
-		session.Tokens[rule.Prerequisite] = prereqTokens[:len(prereqTokens)-1]
-		if err := s.sessionStore.Update(ctx, session); err != nil {
-			return fmt.Errorf("failed to update session after token removal: %w", err)
-		}
+	if err := s.tokenStore.RemoveToken(ctx, sessionID, rule.Prerequisite, token); err != nil {
+		return fmt.Errorf("failed to reserve prerequisite token: %w", err)
 	}
-
+	session.RemoveToken(rule.Prerequisite, token)
+	if err := s.sessionStore.Update(ctx, session); err != nil {
+		return fmt.Errorf("failed to update session after token removal: %w", err)
+	}
+	s.emitEvent(ctx, domain.EventTypeTokenConsumed, sessionID, rule.Prerequisite, token, map[string]any{"consumed_by": string(tool)})
 	return nil
 }
+
+// ExecuteToolCall selects and reserves the exact eligible prerequisite before
+// running the tool. A failed call leaves its one-time prerequisite spent.
+func (s *RatchetServiceImpl) ExecuteToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, run func() (bool, error)) error {
+	if err := sessionID.Validate(); err != nil {
+		return err
+	}
+	lock := &s.workflowLocks[maphash.String(s.workflowSeed, string(sessionID))%uint64(len(s.workflowLocks))]
+	lock.Lock()
+	defer lock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := s.CreateSession(ctx, sessionID); err != nil {
+		return err
+	}
+
+	s.emitEvent(ctx, domain.EventTypeToolCallAttempt, sessionID, tool, "", nil)
+	rule, token, err := s.selectPrerequisite(ctx, sessionID, tool)
+	if err == nil {
+		err = s.consume(ctx, sessionID, tool, rule, token)
+	}
+	if err != nil {
+		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, "", map[string]any{"error": err.Error()})
+		return err
+	}
+
+	ok, err := run()
+	if err != nil || !ok {
+		s.emitEvent(ctx, domain.EventTypeToolCallFailure, sessionID, tool, "", nil)
+		return err
+	}
+	if _, err := s.issueToken(ctx, sessionID, tool, true); err != nil {
+		return fmt.Errorf("tool completed but failed to record Ratchet state: %w", err)
+	}
+	s.emitEvent(ctx, domain.EventTypeToolCallSuccess, sessionID, tool, "", nil)
+	return nil
+}
+
+var _ primary.WorkflowExecutor = (*RatchetServiceImpl)(nil)
 
 // CreateSession creates a new session and emits a session_created observability event.
 // If the session already exists, returns the existing session (idempotent).
@@ -265,9 +268,16 @@ func (s *RatchetServiceImpl) CreateSession(ctx context.Context, sessionID domain
 		return existingSession, nil
 	}
 
+	if !errors.Is(err, secondary.ErrSessionNotFound) {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+
 	// Session doesn't exist, create a new one
 	session := domain.NewSession(sessionID)
 	if err := s.sessionStore.Create(ctx, session); err != nil {
+		if errors.Is(err, secondary.ErrSessionAlreadyExists) {
+			return s.sessionStore.Get(ctx, sessionID)
+		}
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	s.emitEvent(ctx, domain.EventTypeSessionCreated, sessionID, "", "", nil)
@@ -309,7 +319,7 @@ func (s *RatchetServiceImpl) emitEvent(ctx context.Context, eventType domain.Eve
 	}
 
 	event := &domain.Event{
-		ID:        domain.EventID(uuid.New().String()),
+		ID:        domain.EventID(uuid.NewV4().String()),
 		Type:      eventType,
 		SessionID: sessionID,
 		ToolName:  tool,
@@ -325,6 +335,8 @@ func (s *RatchetServiceImpl) emitEvent(ctx context.Context, eventType domain.Eve
 
 // findRules returns all rules registered for a given tool.
 func (s *RatchetServiceImpl) findRules(tool domain.ToolName) []domain.Rule {
+	s.rulesMu.RLock()
+	defer s.rulesMu.RUnlock()
 	var matched []domain.Rule
 	for _, r := range s.rules {
 		if r.Tool == tool {
@@ -336,9 +348,11 @@ func (s *RatchetServiceImpl) findRules(tool domain.ToolName) []domain.Rule {
 
 // findRule finds the first rule for a given tool (used for expiry/token lookup).
 func (s *RatchetServiceImpl) findRule(tool domain.ToolName) *domain.Rule {
-	for i := range s.rules {
-		if s.rules[i].Tool == tool {
-			return &s.rules[i]
+	s.rulesMu.RLock()
+	defer s.rulesMu.RUnlock()
+	for _, rule := range s.rules {
+		if rule.Tool == tool {
+			return &rule
 		}
 	}
 	return nil

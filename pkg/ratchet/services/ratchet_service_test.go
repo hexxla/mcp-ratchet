@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ func TestRatchetServiceImpl_RegisterRule(t *testing.T) {
 		Expiry:       5 * time.Minute,
 	}
 
-	err := service.RegisterRule(context.Background(), rule)
+	err := service.RegisterRule(t.Context(), rule)
 	if err != nil {
 		t.Errorf("RegisterRule() error = %v", err)
 	}
@@ -35,7 +34,7 @@ func TestRatchetServiceImpl_RegisterRule(t *testing.T) {
 		Tool:         "Create Cell",
 		Prerequisite: "Create Cell", // Self-dependency
 	}
-	err = service.RegisterRule(context.Background(), invalidRule)
+	err = service.RegisterRule(t.Context(), invalidRule)
 	if err == nil {
 		t.Error("Expected error for self-dependency rule")
 	}
@@ -54,11 +53,11 @@ func TestRatchetServiceImpl_IssueToken(t *testing.T) {
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
 
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
-	token, err := service.IssueToken(context.Background(), sessionID, "List Tags")
+	token, err := service.IssueToken(t.Context(), sessionID, "List Tags")
 	if err != nil {
 		t.Errorf("IssueToken() error = %v", err)
 	}
@@ -83,7 +82,7 @@ rules:
     expiry: "5m"
     error_message: "Must call List Tags first"
 `
-	rules, err := service.LoadConfiguration(context.Background(), strings.NewReader(yamlConfig))
+	rules, err := service.LoadConfiguration(t.Context(), strings.NewReader(yamlConfig))
 	if err != nil {
 		t.Errorf("LoadConfiguration() error = %v", err)
 	}
@@ -106,7 +105,7 @@ func TestRatchetServiceImpl_GetRequiredPrerequisite(t *testing.T) {
 		Prerequisite: "List Tags",
 		Expiry:       5 * time.Minute,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
@@ -129,7 +128,7 @@ func TestRatchetServiceImpl_ValidateToolCall_Unrestricted(t *testing.T) {
 		adapters.NewRealClock(),
 	)
 
-	err := service.ValidateToolCall(context.Background(), "session-1", "UnrestrictedTool", "")
+	err := service.ValidateToolCall(t.Context(), "session-1", "UnrestrictedTool", "")
 	if err != nil {
 		t.Errorf("ValidateToolCall() for unrestricted tool error = %v", err)
 	}
@@ -151,19 +150,19 @@ func TestRatchetServiceImpl_ValidateToolCall_PrerequisiteNotMet(t *testing.T) {
 		Prerequisite: "ToolA",
 		Expiry:       5 * time.Minute,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
 	// Create empty session (ToolA never called)
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
 	// Should fail - prerequisite not called
-	err := service.ValidateToolCall(context.Background(), sessionID, "ToolB", "")
+	err := service.ValidateToolCall(t.Context(), sessionID, "ToolB", "")
 	if err == nil {
 		t.Error("Expected error when prerequisite not met")
 	}
@@ -186,7 +185,7 @@ func TestRatchetServiceImpl_ValidateToolCall_PrerequisiteMet_WithToken(t *testin
 		Prerequisite: "ToolA",
 		Expiry:       5 * time.Minute,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
@@ -194,18 +193,18 @@ func TestRatchetServiceImpl_ValidateToolCall_PrerequisiteMet_WithToken(t *testin
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
 	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
 	// Issue token for ToolA
-	token, err := service.IssueToken(context.Background(), sessionID, "ToolA")
+	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
 	if err != nil {
 		t.Fatalf("Failed to issue token: %v", err)
 	}
 
 	// Should succeed - prerequisite met with valid token
-	err = service.ValidateToolCall(context.Background(), sessionID, "ToolB", token)
+	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
 	if err != nil {
 		t.Errorf("ValidateToolCall() error = %v", err)
 	}
@@ -232,7 +231,7 @@ func TestRatchetServiceImpl_ValidateToolCall_ExpiredToken(t *testing.T) {
 		Prerequisite: "ToolA",
 		Expiry:       1 * time.Minute,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
@@ -240,12 +239,12 @@ func TestRatchetServiceImpl_ValidateToolCall_ExpiredToken(t *testing.T) {
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
 	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
 	// Issue token (will be immediately expired due to mock clock)
-	token, err := service.IssueToken(context.Background(), sessionID, "ToolA")
+	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
 	if err != nil {
 		t.Fatalf("Failed to issue token: %v", err)
 	}
@@ -254,7 +253,7 @@ func TestRatchetServiceImpl_ValidateToolCall_ExpiredToken(t *testing.T) {
 	mockClock.now = time.Now()
 
 	// Should fail - token expired
-	err = service.ValidateToolCall(context.Background(), sessionID, "ToolB", token)
+	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
 	if err == nil {
 		t.Error("Expected error for expired token")
 	}
@@ -277,19 +276,19 @@ func TestRatchetServiceImpl_ValidateToolCall_CustomErrorMessage(t *testing.T) {
 		Expiry:       5 * time.Minute,
 		ErrorMessage: "You must call ToolA first!",
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
 	// Create empty session
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
 	// Should fail with custom message
-	err := service.ValidateToolCall(context.Background(), sessionID, "ToolB", "")
+	err := service.ValidateToolCall(t.Context(), sessionID, "ToolB", "")
 	if err == nil {
 		t.Fatal("Expected error")
 	}
@@ -313,12 +312,12 @@ func TestRatchetServiceImpl_ValidateToolCall_MissingSession(t *testing.T) {
 		Prerequisite: "ToolA",
 		Expiry:       5 * time.Minute,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
 	// No session created - should fail
-	err := service.ValidateToolCall(context.Background(), "nonexistent-session", "ToolB", "")
+	err := service.ValidateToolCall(t.Context(), "nonexistent-session", "ToolB", "")
 	if err == nil {
 		t.Error("Expected error for missing session")
 	}
@@ -342,7 +341,7 @@ func TestRatchetServiceImpl_ConsumePrerequisiteToken_OneTimeUse(t *testing.T) {
 		Expiry:       5 * time.Minute,
 		OneTimeUse:   true,
 	}
-	if err := service.RegisterRule(context.Background(), rule); err != nil {
+	if err := service.RegisterRule(t.Context(), rule); err != nil {
 		t.Fatalf("Failed to register rule: %v", err)
 	}
 
@@ -350,43 +349,43 @@ func TestRatchetServiceImpl_ConsumePrerequisiteToken_OneTimeUse(t *testing.T) {
 	sessionID := domain.SessionID("test-session")
 	session := domain.NewSession(sessionID)
 	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(context.Background(), session); err != nil {
+	if err := sessionStore.Create(t.Context(), session); err != nil {
 		t.Fatalf("Failed to create session: %v", err)
 	}
 
 	// Issue token for ToolA
-	token, err := service.IssueToken(context.Background(), sessionID, "ToolA")
+	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
 	if err != nil {
 		t.Fatalf("Failed to issue token: %v", err)
 	}
 
 	// Validate should succeed (does not consume with new implementation)
-	err = service.ValidateToolCall(context.Background(), sessionID, "ToolB", token)
+	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
 	if err != nil {
 		t.Fatalf("ValidateToolCall() error = %v", err)
 	}
 
 	// Token should still be valid before consumption
-	validTokens, _ := tokenStore.GetValidTokens(context.Background(), sessionID, "ToolA")
+	validTokens, _ := tokenStore.GetValidTokens(t.Context(), sessionID, "ToolA")
 	if len(validTokens) == 0 {
 		t.Error("Token should exist before consumption")
 	}
 
 	// Consume the token (simulating post-success)
-	err = service.ConsumePrerequisiteToken(context.Background(), sessionID, "ToolB")
+	err = service.ConsumePrerequisiteToken(t.Context(), sessionID, "ToolB")
 	if err != nil {
 		t.Errorf("ConsumePrerequisiteToken() error = %v", err)
 	}
 
 	// Token should now be consumed
-	validTokens, _ = tokenStore.GetValidTokens(context.Background(), sessionID, "ToolA")
+	validTokens, _ = tokenStore.GetValidTokens(t.Context(), sessionID, "ToolA")
 	if len(validTokens) != 0 {
 		t.Error("Token should be consumed after ConsumePrerequisiteToken")
 	}
 }
 
 func TestRatchetServiceImpl_ObservabilityEvents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sessionID := domain.SessionID("obs-session")
 
 	eventStore := adapters.NewMemoryEventStore(0)
@@ -442,7 +441,7 @@ func TestRatchetServiceImpl_ObservabilityEvents(t *testing.T) {
 }
 
 func TestRatchetServiceImpl_ObservabilityDisabled(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	service := NewRatchetService(
 		adapters.NewYAMLConfigLoader(),
 		adapters.NewMemoryTokenStore(),
@@ -481,7 +480,7 @@ func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T)
 		adapters.NewRealClock(),
 	)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// ToolC can be called after ToolA OR ToolB (two rules, OR logic)
 	rules := []domain.Rule{
@@ -497,6 +496,7 @@ func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T)
 	sessionID := domain.SessionID("test-or-session")
 
 	t.Run("fails when neither prerequisite called", func(t *testing.T) {
+		ctx := t.Context()
 		session := domain.NewSession(sessionID)
 		if err := sessionStore.Create(ctx, session); err != nil {
 			t.Fatalf("Create session: %v", err)
@@ -508,6 +508,7 @@ func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T)
 	})
 
 	t.Run("succeeds when only ToolB called (second rule satisfied)", func(t *testing.T) {
+		ctx := t.Context()
 		// Reset session with ToolB called
 		session := domain.NewSession(sessionID)
 		session.RecordToolCall("ToolB")
@@ -524,6 +525,7 @@ func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T)
 	})
 
 	t.Run("succeeds when only ToolA called (first rule satisfied)", func(t *testing.T) {
+		ctx := t.Context()
 		sessionID2 := domain.SessionID("test-or-session-2")
 		session := domain.NewSession(sessionID2)
 		session.RecordToolCall("ToolA")

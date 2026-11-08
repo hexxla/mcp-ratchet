@@ -22,49 +22,6 @@ linters:
   settings:
     depguard:
       rules:
-        domain_pure:
-          files:
-            - "**/internal/core/domain/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/core/services"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/core/ports"
-              desc: Dependencies must point toward the core.
-
-        service_clean:
-          files:
-            - "**/internal/core/services/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter"
-              desc: Dependencies must point toward the core.
-
-        port_clean:
-          files:
-            - "**/internal/core/ports/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/core/services"
-              desc: Dependencies must point toward the core.
-
-        primary_adapter_clean:
-          files:
-            - "**/internal/adapter/primary/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/core/services"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter/secondary"
-              desc: Dependencies must point toward the core.
-
-        secondary_adapter_clean:
-          files:
-            - "**/internal/adapter/secondary/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/internal/adapter/primary"
-              desc: Dependencies must point toward the core.
-
         library_domain:
           files:
             - "**/pkg/ratchet/domain/**.go"

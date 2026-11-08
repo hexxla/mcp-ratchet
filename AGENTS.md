@@ -3,7 +3,7 @@
 ## Architecture
 
 - The reusable Ratchet library lives under `pkg/ratchet/`. The domain and ports are independent of adapters. Services implement the primary ports and use secondary ports for storage, clocks, and token generation.
-- Keep MCP transport and tool wrapping in `pkg/ratchet/mcp/`. Keep the demo in `cmd/mcp-ratchet-demo/` and `internal/`. See the [architecture guide](docs/architecture/architecture.md) for the demo's layer boundaries.
+- Keep MCP transport and tool wrapping in `pkg/ratchet/mcp/`. Keep the demo in `cmd/mcp-ratchet-demo/`. See the [architecture guide](docs/architecture/architecture.md) for the demo's layer boundaries.
 - Preserve session isolation, prerequisite expiry, and one-time token semantics when changing tool gating. Cover denied calls and failed handlers as well as successful calls.
 
 ## Go and verification

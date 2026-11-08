@@ -40,3 +40,10 @@ type RatchetService interface {
 	// Returns an empty slice without error if observability is disabled.
 	GetObservabilityEvents(ctx context.Context, sessionID domain.SessionID, filter *secondary.EventFilter) ([]*domain.Event, error)
 }
+
+// WorkflowExecutor runs a call with session-scoped prerequisite enforcement.
+// The callback reports whether the tool succeeded. A failed tool does not issue
+// a token. A one-time prerequisite is spent before the callback runs.
+type WorkflowExecutor interface {
+	ExecuteToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, run func() (bool, error)) error
+}

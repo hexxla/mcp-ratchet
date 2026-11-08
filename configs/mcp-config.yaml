@@ -16,7 +16,7 @@ observability:
 # Server-level settings
 server:
   # Address to listen on
-  addr: ":8080"
+  addr: "127.0.0.1:8080"
 
   # MCP endpoint path
   mcp_path: "/mcp"

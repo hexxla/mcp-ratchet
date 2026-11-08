@@ -1,80 +1,19 @@
-# Architecture
+# MCP Ratchet architecture
 
-This project follows **Hexagonal Architecture** (also known as **Ports & Adapters**), originally introduced by Alistair Cockburn.
+Ratchet is a reusable Go library for prerequisites between tool calls. The application core owns session state, prerequisite selection and one-time reservation.
 
-The goal is to create a clean, maintainable, and technology-independent core that is easy to test and evolve over time.
+| Path | Ownership |
+| --- | --- |
+| `pkg/ratchet/domain` | Rules, session state and event values |
+| `pkg/ratchet/ports/primary` | Public service and workflow execution contracts |
+| `pkg/ratchet/ports/secondary` | Session and token stores, clock, entropy, config and event contracts |
+| `pkg/ratchet/services` | Session-scoped workflow execution and application state transitions |
+| `pkg/ratchet/adapters` | Memory, YAML, clock, entropy and event implementations |
+| `pkg/ratchet/mcp` | SDK adapter that obtains the transport session ID and maps tool results |
+| `cmd/mcp-ratchet-demo` | Loopback demonstration, composition and redacted diagnostics |
 
-## Core Principles
+The core depends on the domain and ports. The MCP adapter depends on the primary port. A transport with an authenticated or otherwise isolated session identity supplies that ID to the workflow. Each session's reservation, handler execution and recording are serialized. An eligible one-time alternative reserves the exact token before the handler. A failed handler spends the reservation and issues no downstream token. Session store callers receive detached snapshots.
 
-- The **domain** is the heart of the application and must remain pure.
-- All dependencies must point **inward** toward the domain.
-- External concerns (databases, HTTP, external APIs, etc.) are pushed to the edges (adapters).
-- The core never depends on frameworks or infrastructure.
+Use `primary.WorkflowExecutor` for new integrations. Lower-level methods remain available for callers that manage their own sequencing. The in-memory implementation is process-local. The demo is for local observation and uses loopback IP addresses.
 
-## Layer Responsibilities
-
-### `core/domain/`
-
-- Contains business entities, value objects, and domain rules.
-- Completely independent — no imports from any other internal package.
-- Represents the business language and invariants of the system.
-
-### `core/ports/`
-
-- Defines **interfaces** (contracts) between the core and the outside world.
-- `core/ports/primary/` — Driving ports (inbound): what the outside world can ask the application to do (use cases).
-- `core/ports/secondary/` — Driven ports (outbound): what the application needs from external systems.
-
-### `core/services/`
-
-- Implements application use cases and orchestrates domain logic.
-- Depends only on `core/domain/` and `core/ports/`.
-- Contains workflow logic, transaction management, and coordination.
-
-### `adapter/`
-
-- Contains all concrete implementations.
-- `adapter/primary/` — Inbound adapters (HTTP handlers, CLI, gRPC servers, etc.).
-- `adapter/secondary/` — Outbound adapters (database repositories, external APIs, caches, etc.).
-- Translates between external world and the port interfaces.
-
-### `config/`
-
-- Centralizes configuration structures and loading logic.
-- Used primarily by primary adapters.
-
-## Dependency Graph
-
-```mermaid
-flowchart TB
-    subgraph Core["Application Core"]
-        direction TB
-        Domain[core/domain/]
-        Port[core/ports/]
-        Service[core/services/]
-    end
-
-    subgraph Adapters["Infrastructure Adapters"]
-        direction TB
-        PAdapter[adapter/primary/]
-        SAdapter[adapter/secondary/]
-    end
-
-    Config[config/]
-
-    Service --> Domain
-    Service --> Port
-    Port --> Domain
-
-    PAdapter --> Port
-    PAdapter --> Domain
-    SAdapter --> Port
-
-    classDef core fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,rx:10,ry:10
-    classDef adapter fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,rx:10,ry:10
-    classDef config fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-
-    class Domain,Port,Service core
-    class PAdapter,SAdapter adapter
-    class Config config
-```
+Run `make ci` for boundary checks and the public adapter's two-client integration test.
