@@ -86,9 +86,9 @@ __debug_bin.exe
 TODO.md
 NOTES.md
 
-# LLM tool configurations
+# Local agent configuration
 .cursor/
 .claude/
-# .windsurf/
+.windsurf/
 .continue/
 .codex/

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use repository-native Codex instructions for development. Removed the legacy assistant setup and cleanup targets, generated workflows, and automatic transcript capture guidance.
 - Updated folder structure to clearly separate primary and secondary ports/adapters
 
 ## [0.1.0] - 2025-04-25

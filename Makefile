@@ -1,4 +1,4 @@
-# Makefile for LLM Folder Bootstrap CLI
+# Makefile for MCP Ratchet
 
 .PHONY: help build test test-all integration lint fmt ci clean install run run-ws-test tidy vet update govulncheck \
 	build-linux build-darwin build-windows build-all
@@ -61,32 +61,6 @@ fmt:
 ci:
 	./scripts/ci/ci.sh
 
-# LLM Tool Setup
-llm-setup:
-	@./scripts/llm/llm-setup.sh
-
-# Cleanup LLM tool folders
-clean-llm-cursor:
-	rm -rf .cursor
-
-clean-llm-claude:
-	rm -rf .claude
-
-clean-llm-windsurf:
-	rm -rf .windsurf
-
-clean-llm-continue:
-	rm -rf .continue
-
-clean-llm-copilot:
-	rm -rf .github/agents .github/skills .github/instructions 2>/dev/null || true
-
-clean-llm-all:
-	rm -rf .cursor .claude .windsurf .continue .codex
-	rm -rf .github/agents .github/skills .github/instructions 2>/dev/null || true
-
-clean-llm: clean-llm-all
-
 install:
 	go install ./cmd/mcp-ratchet-demo
 
@@ -108,7 +82,6 @@ help:
 	@echo "  make run             Run the CLI via go run"
 	@echo "  make clean           Remove build artifacts"
 	@echo "  make tidy            go mod tidy"
-	@echo "  make llm-setup       Setup LLM tool configurations"
 
 run:
 	go run ./cmd/mcp-ratchet-demo
