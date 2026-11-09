@@ -1,59 +1,34 @@
-# MCP Ratchet – Simple Overview
+# MCP Ratchet overview
 
-## What is MCP Ratchet?
+Ratchet enforces prerequisites between tools in one MCP session. For example,
+a write may require a successful tag listing first. This makes an application's
+chosen call order enforceable even when the model skips instructions.
 
-MCP Ratchet is a small, smart helper that runs inside an MCP server. Its job is to make sure the AI, or large language model (LLM), follows the exact steps you want every time before it is allowed to use certain tools.
+## How a guarded call works
 
-It acts like a strict but helpful gatekeeper that enforces good habits.
+1. The host registers tools and installs Ratchet receiving middleware.
+2. A successful prerequisite call records a server-owned completion in its session.
+3. A dependent call selects an eligible prerequisite. Grouped `after_any` alternatives are
+   tried in block/list order; TTL applies to the producer's completion.
+4. A one-time completion is consumed before the dependent call executes.
+5. Only successful execution, including SDK output validation and serialization,
+   can record a downstream completion. A failed call needs a fresh one-time
+   prerequisite, even if the handler already performed an external write.
 
-## Why it is needed
+There are no client Ratchet credentials. The transport supplies the
+session identity. Completions cannot be borrowed from another session.
 
-LLMs are very smart, but they can be forgetful or take shortcuts. For example:
+## What the application still owns
 
-- You may want the AI to always check existing tags before creating a new cell.
-- Without help, the AI may forget, invent new tags, or use irrelevant ones.
-- This can create messy data that is hard to search or organize later.
-- Simply telling the AI to remember to check tags first in the prompt usually does not work reliably.
+Ratchet checks ordering and tool success. The host defines authentication,
+resource access, result meaning, and write-retry policy. A successful tag listing
+does not prove that a later write used appropriate tags. A failed response does
+not prove that an external write was rolled back; reconcile before retrying.
 
-MCP Ratchet solves this by making the rule impossible to break.
+The engine owns process-local state. Sessions and
+per-prerequisite completions are bounded; expired and idle state is reclaimed
+during later activity. Optional event history is diagnostic and contains sensitive
+internal identifiers, so redact it before external exposure.
 
-## What it does
-
-It creates a simple “you must do A before you can do B” system:
-
-1. The AI wants to use a tool such as `Create Cell`.
-2. Before it is allowed to do that, it must first run a required earlier tool, such as `List Tags`.
-3. When the AI successfully runs `List Tags`, the server gives it a special one-time code called a ratchet token.
-4. The AI must include that exact code when it tries to call `Create Cell`.
-5. After `Create Cell` runs successfully, the old code expires and a new one is issued for next time.
-6. If the AI tries to create a cell without the correct code, the server politely refuses and tells it exactly what to do first.
-
-## What it enforces
-
-MCP Ratchet helps enforce:
-
-- Correct order of operations.
-- Required preparation steps, such as checking data, listing options, or validating inputs.
-- Consistent behavior across all sessions.
-- Better data quality, including proper tagging and complete context.
-
-It is not mainly about stopping dangerous actions. It is about making sure the AI follows a preferred workflow.
-
-## Example
-
-Without MCP Ratchet, an AI might create cells with random or irrelevant tags, which leads to messy data.
-
-With MCP Ratchet:
-
-1. The AI must call `List Tags` first.
-2. It gets the current tags and a secret code.
-3. It can then call `Create Cell`, but only if it provides the code.
-
-The result is that every cell is more likely to be tagged properly using real existing tags.
-
-## Benefits
-
-- The AI learns the correct pattern very quickly.
-- Results stay cleaner and more organized.
-- There is no need to write long, repetitive instructions in every prompt.
-- It works reliably even when the model is creative or distracted.
+See the [repository guide](../../README.md) for policy and embedding examples,
+and the [architecture contract](../architecture/architecture.md) for ownership.

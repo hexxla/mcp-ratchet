@@ -7,13 +7,10 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	ratchetMCP "github.com/hexxla/mcp-ratchet/pkg/ratchet/mcp"
-	ratchetPorts "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/primary"
 )
 
 // registerGreetingTool registers the greet tool on the MCP server
-func registerGreetingTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecutor, log *slog.Logger) {
+func registerGreetingTool(server *mcp.Server, log *slog.Logger) {
 	type greetInput struct {
 		Name string `json:"name" jsonschema:"The name to greet"`
 	}
@@ -34,11 +31,6 @@ func registerGreetingTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecu
 		}, struct{}{}, nil
 	}
 
-	// Wrap with ratchet if provided
-	if ratchet != nil {
-		handler = ratchetMCP.WrapWithRatchet("greet", handler, ratchet)
-	}
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "greet",
 		Description: "Returns a greeting message for the given name",
@@ -46,7 +38,7 @@ func registerGreetingTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecu
 }
 
 // registerGetUserNameTool registers the get_user_name tool on the MCP server
-func registerGetUserNameTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecutor, log *slog.Logger) {
+func registerGetUserNameTool(server *mcp.Server, log *slog.Logger) {
 	type getUserInput struct{}
 
 	handler := func(ctx context.Context, req *mcp.CallToolRequest, _ getUserInput) (*mcp.CallToolResult, struct{}, error) {
@@ -61,11 +53,6 @@ func registerGetUserNameTool(server *mcp.Server, ratchet ratchetPorts.WorkflowEx
 		}, struct{}{}, nil
 	}
 
-	// Wrap with ratchet if provided
-	if ratchet != nil {
-		handler = ratchetMCP.WrapWithRatchet("get_user_name", handler, ratchet)
-	}
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_user_name",
 		Description: "Returns the current user's name (for demo purposes, returns 'DemoUser')",
@@ -73,7 +60,7 @@ func registerGetUserNameTool(server *mcp.Server, ratchet ratchetPorts.WorkflowEx
 }
 
 // registerGetTimeTool registers the get_time tool on the MCP server
-func registerGetTimeTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecutor, log *slog.Logger) {
+func registerGetTimeTool(server *mcp.Server, log *slog.Logger) {
 	type getTimeInput struct{}
 	type getTimeResponse struct {
 		Time string `json:"time"`
@@ -92,11 +79,6 @@ func registerGetTimeTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecut
 		}, resp, nil
 	}
 
-	// Wrap with ratchet if provided
-	if ratchet != nil {
-		handler = ratchetMCP.WrapWithRatchet("get_time", handler, ratchet)
-	}
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_time",
 		Description: "Returns the current time",
@@ -104,7 +86,7 @@ func registerGetTimeTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecut
 }
 
 // registerGetDateTool registers the get_date tool on the MCP server
-func registerGetDateTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecutor, log *slog.Logger) {
+func registerGetDateTool(server *mcp.Server, log *slog.Logger) {
 	type getDateInput struct{}
 	type getDateResponse struct {
 		Date string `json:"date"`
@@ -121,11 +103,6 @@ func registerGetDateTool(server *mcp.Server, ratchet ratchetPorts.WorkflowExecut
 				&mcp.TextContent{Text: resp.Date},
 			},
 		}, resp, nil
-	}
-
-	// Wrap with ratchet if provided
-	if ratchet != nil {
-		handler = ratchetMCP.WrapWithRatchet("get_date", handler, ratchet)
 	}
 
 	mcp.AddTool(server, &mcp.Tool{

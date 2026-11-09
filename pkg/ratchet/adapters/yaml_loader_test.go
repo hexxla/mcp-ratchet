@@ -1,90 +1,78 @@
 package adapters
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
+	"github.com/hexxla/mcp-ratchet/pkg/ratchet"
 )
 
-func TestYAMLConfigLoader_Load(t *testing.T) {
-	loader := NewYAMLConfigLoader()
-
-	yamlConfig := `
+func TestLoadPolicy(t *testing.T) {
+	policy, err := LoadPolicy(strings.NewReader(`
+completion_ttl: 10m
 rules:
-  - tool: "Create Cell"
-    prerequisite: "List Tags"
-    expiry: "5m"
-    error_message: "Must call List Tags first"
-`
-	rules, err := loader.Load(context.Background(), strings.NewReader(yamlConfig))
+  - tool: list_tags
+    ttl: 1m
+  - tool: write
+    after_any: [list_tags, discover]
+    consume: true
+    message: Discover first.
+  - tool: write
+    after_any: [cached]
+`))
 	if err != nil {
-		t.Errorf("Load() error = %v", err)
+		t.Fatal(err)
 	}
-	if len(rules) != 1 {
-		t.Errorf("Expected 1 rule, got %d", len(rules))
+	if policy.CompletionTTL != 10*time.Minute || len(policy.Rules) != 3 || policy.Rules[0].TTL != time.Minute {
+		t.Fatalf("decoded policy = %+v", policy)
 	}
-	if rules[0].Tool != "Create Cell" {
-		t.Errorf("Expected tool 'Create Cell', got '%s'", rules[0].Tool)
+	if got := policy.Rules[1]; len(got.AfterAny) != 2 || got.AfterAny[0] != "list_tags" || got.AfterAny[1] != "discover" || !got.Consume || got.Message != "Discover first." {
+		t.Fatalf("grouped rule = %+v", got)
 	}
-	if rules[0].Expiry != 5*time.Minute {
-		t.Errorf("Expected expiry 5m, got %v", rules[0].Expiry)
-	}
-}
-
-func TestYAMLConfigLoader_ValidateCircularDependency(t *testing.T) {
-	loader := NewYAMLConfigLoader()
-
-	rules := []domain.Rule{
-		{Tool: "A", Prerequisite: "B", Expiry: 5 * time.Minute},
-		{Tool: "B", Prerequisite: "A", Expiry: 5 * time.Minute},
-	}
-
-	err := loader.Validate(rules)
-	if !errors.Is(err, domain.ErrCircularDependency) {
-		t.Errorf("Expected ErrCircularDependency, got %v", err)
+	if policy.Rules[2].Consume {
+		t.Fatal("repeated alternatives lost mixed consumption")
 	}
 }
 
-func TestYAMLConfigLoader_ValidateNoCycle(t *testing.T) {
-	loader := NewYAMLConfigLoader()
-
-	rules := []domain.Rule{
-		{Tool: "A", Prerequisite: "B", Expiry: 5 * time.Minute},
-		{Tool: "B", Prerequisite: "C", Expiry: 5 * time.Minute},
-	}
-
-	err := loader.Validate(rules)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-}
-
-func TestYAMLConfigLoaderRejectsAmbiguousPolicies(t *testing.T) {
-	tests := []struct {
-		name string
-		yaml string
-		want string
-	}{
-		{"unknown field", "rules: [{tool: write, prerequisite: read, one_time_ues: true}]", "one_time_ues"},
+func TestLoadPolicyRejectsInvalidYAMLAndPolicies(t *testing.T) {
+	for _, tt := range []struct{ name, yaml, want string }{
+		{"unknown field", "rules: [{tool: write, after_any: [read], consuem: true}]", "consuem"},
+		{"legacy prerequisite", "rules: [{tool: write, prerequisite: read}]", "prerequisite"},
+		{"legacy expiry", "rules: [{tool: read, expiry: 5m}]", "expiry"},
+		{"legacy consumption", "rules: [{tool: write, one_time_use: true}]", "one_time_use"},
+		{"legacy message", "rules: [{tool: write, error_message: denied}]", "error_message"},
+		{"inert observability", "observability: {enabled: true}", "observability"},
 		{"extra document", "rules: []\n---\nrules: []", "exactly one"},
-		{"nonpositive expiry", "rules: [{tool: read, expiry: 0s}]", "must be positive"},
-		{"conflicting expiry", "rules: [{tool: write, prerequisite: first, expiry: 1s}, {tool: write, prerequisite: second, expiry: 2s}]", "conflicting token expiry"},
-		{"mixed free pass", "rules: [{tool: write, prerequisite: read}, {tool: write}]", "mixes unrestricted and guarded rules"},
-	}
-	loader := NewYAMLConfigLoader()
-	for _, tt := range tests {
+		{"extra null document", "rules: []\n---\nnull", "exactly one"},
+		{"empty document", "", "decode ratchet YAML"},
+		{"null document", "null", "mapping"},
+		{"sequence document", "[]", "unmarshal"},
+		{"duplicate YAML key", "rules: []\nrules: []", "already defined"},
+		{"scalar alternatives", "rules: [{tool: write, after_any: read}]", "unmarshal"},
+		{"zero default TTL", "completion_ttl: 0s", "positive"},
+		{"negative default TTL", "completion_ttl: -1s", "positive"},
+		{"zero tool TTL", "rules: [{tool: read, ttl: 0s}]", "positive"},
+		{"invalid TTL", "rules: [{tool: read, ttl: later}]", "invalid duration"},
+		{"duplicate edge", "rules: [{tool: write, after_any: [read, read]}]", "duplicate"},
+		{"conflicting TTL", "rules: [{tool: write, after_any: [first], ttl: 1s}, {tool: write, after_any: [second], ttl: 2s}]", "conflicting"},
+		{"mixed free pass", "rules: [{tool: write, after_any: [read]}, {tool: write}]", "mixes"},
+		{"self cycle", "rules: [{tool: read, after_any: [read]}]", "circular"},
+		{"cycle", "rules: [{tool: a, after_any: [b]}, {tool: b, after_any: [a]}]", "circular"},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			rules, err := loader.Load(t.Context(), strings.NewReader(tt.yaml))
-			if err == nil {
-				err = loader.Validate(rules)
-			}
+			_, err := LoadPolicy(strings.NewReader(tt.yaml))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("error = %v, want %q", err, tt.want)
+				t.Fatalf("LoadPolicy error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoadPolicyPreservesValidationCause(t *testing.T) {
+	_, err := LoadPolicy(strings.NewReader("rules: [{tool: a, after_any: [a]}]"))
+	if !errors.Is(err, ratchet.ErrInvalidPolicy) {
+		t.Fatalf("validation cause lost: %v", err)
 	}
 }

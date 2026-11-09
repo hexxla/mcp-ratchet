@@ -3,7 +3,11 @@ package main
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
+	"path"
+	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,6 +47,19 @@ func validateDemoAddr(addr string) error {
 	}
 	if ip := net.ParseIP(host); !ip.IsLoopback() {
 		return fmt.Errorf("demo listen address must use a loopback IP: %q", addr)
+	}
+	return nil
+}
+
+// validateDemoPath excludes ServeMux patterns and paths that require cleaning.
+func validateDemoPath(endpoint string) error {
+	if endpoint == "/" || !strings.HasPrefix(endpoint, "/") || path.Clean(endpoint) != endpoint || strings.ContainsAny(endpoint, "{}?#\\%") ||
+		strings.ContainsFunc(endpoint, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return fmt.Errorf("demo MCP endpoint must be a canonical literal path: %q", endpoint)
+	}
+	u, err := url.ParseRequestURI(endpoint)
+	if err != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("demo MCP endpoint must be a valid literal path: %q", endpoint)
 	}
 	return nil
 }

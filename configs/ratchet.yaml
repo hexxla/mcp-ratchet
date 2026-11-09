@@ -1,33 +1,14 @@
-# Ratchet Configuration
-# Defines tool dependencies for MCP tools
-# A tool cannot be called unless its prerequisite has been completed
-
+# Completion lifetime belongs to the successful producer tool.
+completion_ttl: 15s
 rules:
-  # Expiry belongs to the tool issuing the completion.
-  # greet tool has no prerequisites (can be called first)
   - tool: greet
-    prerequisite: ""
-    expiry: 15s
-    error_message: ""
-    one_time_use: false
-
-  # get_user_name requires greet to be called first
   - tool: get_user_name
-    prerequisite: greet
-    expiry: 15s
-    error_message: "You must call the 'greet' tool before calling 'get_user_name'. Please call greet first to establish the required session."
-    one_time_use: true
-
-  # get_time requires get_user_name to be called first (chain dependency)
+    after_any: [greet]
+    consume: true
+    message: Call greet before get_user_name.
   - tool: get_time
-    prerequisite: get_user_name
-    expiry: 15s
-    error_message: "You must call the 'get_user_name' tool before calling 'get_time'. Please call get_user_name first."
-    one_time_use: false
-
-  # get_date requires get_time to be called first (chain dependency)
+    after_any: [get_user_name]
+    message: Call get_user_name before get_time.
   - tool: get_date
-    prerequisite: get_time
-    expiry: 15s
-    error_message: "You must call the 'get_time' tool before calling 'get_date'. Please call get_time first."
-    one_time_use: false
+    after_any: [get_time]
+    message: Call get_time before get_date.

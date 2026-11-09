@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.3.x   | :white_check_mark: |
+| < 0.3   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -12,7 +13,7 @@ If you discover a security vulnerability, please report it privately to avoid ex
 
 **Do not open a public issue.**
 
-Instead, please send an email to: [security contact email]
+Instead, email [sploitzberg@proton.me](mailto:sploitzberg@proton.me).
 
 Please include:
 - A description of the vulnerability
@@ -29,9 +30,9 @@ We will:
 ## Security Best Practices
 
 This project follows security best practices including:
-- Automated dependency scanning via Dependabot
+- Go vulnerability checking in CI; Dependabot security updates are controlled by GitHub repository settings
 - Security scanning via gosec
 - Secret scanning in CI/CD pipeline
-- Regular dependency updates
+- Dependency updates reviewed with the normal CI checks
 
 For more information on our security practices, see the [CI guide](CONTRIBUTING.md#ci).

@@ -2,9 +2,10 @@
 
 ## Architecture
 
-- The reusable Ratchet library lives under `pkg/ratchet/`. The domain and ports are independent of adapters. Services implement the primary ports and use secondary ports for storage, clocks, and token generation.
-- Keep MCP transport and tool wrapping in `pkg/ratchet/mcp/`. Keep the demo in `cmd/mcp-ratchet-demo/`. See the [architecture guide](docs/architecture/architecture.md) for the demo's layer boundaries.
-- Preserve session isolation, prerequisite expiry, and one-time token semantics when changing tool gating. Cover denied calls and failed handlers as well as successful calls.
+- The public core is `github.com/hexxla/mcp-ratchet/pkg/ratchet`: Policy, Rule, Event and Engine. Keep it independent of YAML, MCP SDK, concrete adapters and storage abstractions.
+- Keep canonical YAML loading and optional event history in `pkg/ratchet/adapters`, SDK middleware and its consumer-owned Executor interface in `pkg/ratchet/mcp`, and composition/lifecycle in `cmd/mcp-ratchet-demo`. See the [architecture guide](docs/architecture/architecture.md).
+- Preserve session isolation, completion expiry, exact consumption before calls, per-session cancellation and bounded state. Cover denied calls, failed handlers and final SDK output failures as well as success.
+- Events are typed values with no token or generic metadata. Keep history independent of the engine and observer callbacks outside global bookkeeping locks.
 
 ## Go and verification
 

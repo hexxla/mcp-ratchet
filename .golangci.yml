@@ -19,39 +19,33 @@ linters:
   settings:
     depguard:
       rules:
-        library_domain:
+        library_core:
           files:
-            - "**/pkg/ratchet/domain/**.go"
-          deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/mcp"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/ports"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/services"
-              desc: Dependencies must point toward the core.
+            - "**/pkg/ratchet/*.go"
+            - "!**/*_test.go"
+          list-mode: strict
+          allow:
+            - $gostd
 
-        library_ports:
+        library_adapters:
           files:
-            - "**/pkg/ratchet/ports/**.go"
+            - "**/pkg/ratchet/adapters/**.go"
+            - "!**/*_test.go"
           deny:
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
-              desc: Dependencies must point toward the core.
+            - pkg: "github.com/modelcontextprotocol/go-sdk"
+              desc: MCP transport belongs in its own adapter.
             - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/mcp"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/services"
-              desc: Dependencies must point toward the core.
+              desc: YAML and history must not depend on MCP transport.
 
-        library_services:
+        library_mcp:
           files:
-            - "**/pkg/ratchet/services/**.go"
-            - "!**/pkg/ratchet/services/ratchet_service_test.go"
+            - "**/pkg/ratchet/mcp/**.go"
+            - "!**/*_test.go"
           deny:
+            - pkg: "gopkg.in/yaml.v3"
+              desc: YAML decoding belongs in the configuration adapter.
             - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/adapters"
-              desc: Dependencies must point toward the core.
-            - pkg: "github.com/hexxla/mcp-ratchet/pkg/ratchet/mcp"
-              desc: Dependencies must point toward the core.
+              desc: SDK middleware must not own configuration or history.
 
     gocritic:
       enabled-tags:
