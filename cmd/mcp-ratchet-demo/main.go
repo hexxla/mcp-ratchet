@@ -55,7 +55,6 @@ func run(log *slog.Logger) error {
 	if *ratchetConfig != "" {
 		configLoader := adapters.NewYAMLConfigLoader()
 		tokenStore := adapters.NewMemoryTokenStore()
-		sessionStore := adapters.NewMemorySessionStore()
 		randomGen := adapters.NewCryptoRandomGenerator()
 		clock := adapters.NewRealClock()
 
@@ -63,7 +62,7 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("failed to open ratchet config: %w", err)
 		}
-		ratchetSvc := ratchetServices.NewRatchetService(configLoader, tokenStore, sessionStore, randomGen, clock)
+		ratchetSvc := ratchetServices.NewRatchetService(configLoader, tokenStore, randomGen, clock)
 		rules, loadErr := ratchetSvc.LoadConfiguration(context.Background(), configFile)
 		if err := errors.Join(loadErr, configFile.Close()); err != nil {
 			return fmt.Errorf("failed to load ratchet configuration: %w", err)

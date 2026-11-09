@@ -53,19 +53,6 @@ func (m *MemoryTokenStore) LatestToken(_ context.Context, sessionID domain.Sessi
 	return entries[len(entries)-1].value, true, nil
 }
 
-// GetValidTokens returns a detached list of valid completions.
-func (m *MemoryTokenStore) GetValidTokens(_ context.Context, sessionID domain.SessionID, tool domain.ToolName) ([]domain.TokenValue, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	entries := liveEntries(m.tokens[sessionID][tool], time.Now())
-	m.setEntries(sessionID, tool, entries)
-	tokens := make([]domain.TokenValue, len(entries))
-	for i, entry := range entries {
-		tokens[i] = entry.value
-	}
-	return tokens, nil
-}
-
 // RemoveToken removes a specific token.
 func (m *MemoryTokenStore) RemoveToken(_ context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
 	m.mu.Lock()
@@ -77,6 +64,16 @@ func (m *MemoryTokenStore) RemoveToken(_ context.Context, sessionID domain.Sessi
 	}
 	m.setEntries(sessionID, tool, slices.Delete(entries, i, i+1))
 	return nil
+}
+
+// HasLiveTokens prunes expired completions and reports whether a session has state.
+func (m *MemoryTokenStore) HasLiveTokens(_ context.Context, sessionID domain.SessionID, now time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for tool, entries := range m.tokens[sessionID] {
+		m.setEntries(sessionID, tool, liveEntries(entries, now))
+	}
+	return len(m.tokens[sessionID]) != 0, nil
 }
 
 // DeleteSession releases the session's token state.

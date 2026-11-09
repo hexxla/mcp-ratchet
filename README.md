@@ -47,17 +47,24 @@ handlers with [`WrapWithRatchet`](pkg/ratchet/mcp/wrapper.go).
 handler = ratchetmcp.WrapWithRatchet("put_cell", handler, service)
 ```
 
+Ratchet v0.3.0 removes the separate session store and low-level validation,
+consumption, and issuance methods. Constructors take a token store, and
+`ExecuteToolCall` manages the workflow from prerequisite selection through
+recording a successful call.
+
 Gate both the protected tools and their prerequisites. The executor serializes
 calls within a session, waits with request cancellation, and tracks successful
 completions only for tools used as prerequisites. State lives in process.
-The default executor admits up to 1,024 sessions. Each session keeps up to
-64 completions per prerequisite tool, retaining the newest at capacity.
-Idle sessions expire after 30 minutes and are reclaimed on subsequent
-activity. Expired completions cannot authorize a call.
+The executor admits up to 1,024 sessions with active calls or live
+completions. A denied call with no live completions releases its slot
+immediately. Each session keeps up to 64 completions per prerequisite tool.
+Expired completions and sessions idle for 30 minutes are reclaimed on
+subsequent activity.
 
-For observability, applications can pass a custom event store to
-`NewRatchetServiceWithObservability`. Event stores receive internal session
-IDs and tokens. Redact or replace those values before exposing events.
+Pass an event sink to `NewRatchetServiceWithEventSink` for live
+observability. Use `NewRatchetServiceWithObservability` for an event store
+that also supports historical queries. Both receive internal session IDs
+and tokens. Redact or replace those values before exposing events.
 [Mosaic's integration](https://github.com/hexxla/mosaic/blob/main/docs/mosaic/RATCHET_INTEGRATION.md)
 has an authenticated live observer that emits separate correlation IDs.
 

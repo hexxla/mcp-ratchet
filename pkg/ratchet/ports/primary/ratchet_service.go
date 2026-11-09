@@ -10,27 +10,13 @@ import (
 
 // RatchetService defines the primary port for ratchet operations
 type RatchetService interface {
+	WorkflowExecutor
+
 	// RegisterRule adds a new tool dependency rule
 	RegisterRule(ctx context.Context, rule domain.Rule) error
 
-	// ValidateToolCall checks if a tool can be called
-	ValidateToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error
-
-	// ConsumePrerequisiteToken consumes the prerequisite token for one-time-use rules.
-	// Prefer WorkflowExecutor so selection and reservation are serialized.
-	ConsumePrerequisiteToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) error
-
-	// IssueToken creates a new ratchet token after successful execution
-	IssueToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) (domain.TokenValue, error)
-
 	// LoadConfiguration loads rules from YAML
 	LoadConfiguration(ctx context.Context, config io.Reader) ([]domain.Rule, error)
-
-	// CreateSession creates a new session and emits a session_created observability event.
-	CreateSession(ctx context.Context, sessionID domain.SessionID) (*domain.Session, error)
-
-	// GetRequiredPrerequisite returns the prerequisite tool for a given tool
-	GetRequiredPrerequisite(tool domain.ToolName) (domain.ToolName, error)
 
 	// GetObservabilityStats returns aggregate event metrics.
 	// Returns nil stats without error if observability is disabled.

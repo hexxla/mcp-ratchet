@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,6 @@ func TestRatchetServiceImpl_RegisterRule(t *testing.T) {
 	service := NewRatchetService(
 		adapters.NewYAMLConfigLoader(),
 		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
 		adapters.NewCryptoRandomGenerator(),
 		adapters.NewRealClock(),
 	)
@@ -42,37 +42,10 @@ func TestRatchetServiceImpl_RegisterRule(t *testing.T) {
 	}
 }
 
-func TestRatchetServiceImpl_IssueToken(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	token, err := service.IssueToken(t.Context(), sessionID, "List Tags")
-	if err != nil {
-		t.Errorf("IssueToken() error = %v", err)
-	}
-	if len(token) < 32 {
-		t.Error("Expected token to be at least 32 characters")
-	}
-}
-
 func TestRatchetServiceImpl_LoadConfiguration(t *testing.T) {
 	service := NewRatchetService(
 		adapters.NewYAMLConfigLoader(),
 		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
 		adapters.NewCryptoRandomGenerator(),
 		adapters.NewRealClock(),
 	)
@@ -93,352 +66,45 @@ rules:
 	}
 }
 
-func TestRatchetServiceImpl_GetRequiredPrerequisite(t *testing.T) {
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	rule := domain.Rule{
-		Tool:         "Create Cell",
-		Prerequisite: "List Tags",
-		Expiry:       5 * time.Minute,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	prereq, err := service.GetRequiredPrerequisite("Create Cell")
-	if err != nil {
-		t.Errorf("GetRequiredPrerequisite() error = %v", err)
-	}
-	if prereq != "List Tags" {
-		t.Errorf("Expected prerequisite 'List Tags', got '%s'", prereq)
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_Unrestricted(t *testing.T) {
-	// Tool with no rules should be allowed
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	err := service.ValidateToolCall(t.Context(), "session-1", "UnrestrictedTool", "")
-	if err != nil {
-		t.Errorf("ValidateToolCall() for unrestricted tool error = %v", err)
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_PrerequisiteNotMet(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	// Register rule: ToolB requires ToolA
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       5 * time.Minute,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// Create empty session (ToolA never called)
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	// Should fail - prerequisite not called
-	err := service.ValidateToolCall(t.Context(), sessionID, "ToolB", "")
-	if err == nil {
-		t.Error("Expected error when prerequisite not met")
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_PrerequisiteMet_WithToken(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	tokenStore := adapters.NewMemoryTokenStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		tokenStore,
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	// Register rule: ToolB requires ToolA
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       5 * time.Minute,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// Create session with ToolA called and valid token
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	// Issue token for ToolA
-	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
-	if err != nil {
-		t.Fatalf("Failed to issue token: %v", err)
-	}
-
-	// Should succeed - prerequisite met with valid token
-	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
-	if err != nil {
-		t.Errorf("ValidateToolCall() error = %v", err)
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_ExpiredToken(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	tokenStore := adapters.NewMemoryTokenStore()
-
-	// Use a clock that returns expired time
-	mockClock := &mockClock{now: time.Now().Add(-10 * time.Minute)}
-
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		tokenStore,
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		mockClock,
-	)
-
-	// Register rule with 1 minute expiry
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       1 * time.Minute,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// Create session
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	// Issue token (will be immediately expired due to mock clock)
-	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
-	if err != nil {
-		t.Fatalf("Failed to issue token: %v", err)
-	}
-
-	// Reset clock to real time for validation
-	mockClock.now = time.Now()
-
-	// Should fail - token expired
-	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
-	if err == nil {
-		t.Error("Expected error for expired token")
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_CustomErrorMessage(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	// Register rule with custom error message
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       5 * time.Minute,
-		ErrorMessage: "You must call ToolA first!",
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// Create empty session
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	// Should fail with custom message
-	err := service.ValidateToolCall(t.Context(), sessionID, "ToolB", "")
-	if err == nil {
-		t.Fatal("Expected error")
-	}
-	if err.Error() != "You must call ToolA first!" {
-		t.Errorf("Expected custom error message, got: %v", err)
-	}
-}
-
-func TestRatchetServiceImpl_ValidateToolCall_MissingSession(t *testing.T) {
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	// Register rule requiring prerequisite
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       5 * time.Minute,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// No session created - should fail
-	err := service.ValidateToolCall(t.Context(), "nonexistent-session", "ToolB", "")
-	if err == nil {
-		t.Error("Expected error for missing session")
-	}
-}
-
-func TestRatchetServiceImpl_ConsumePrerequisiteToken_OneTimeUse(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	tokenStore := adapters.NewMemoryTokenStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		tokenStore,
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	// Register one-time-use rule: ToolB requires ToolA (one-time-use)
-	rule := domain.Rule{
-		Tool:         "ToolB",
-		Prerequisite: "ToolA",
-		Expiry:       5 * time.Minute,
-		OneTimeUse:   true,
-	}
-	if err := service.RegisterRule(t.Context(), rule); err != nil {
-		t.Fatalf("Failed to register rule: %v", err)
-	}
-
-	// Create session with ToolA called
-	sessionID := domain.SessionID("test-session")
-	session := domain.NewSession(sessionID)
-	session.RecordToolCall("ToolA")
-	if err := sessionStore.Create(t.Context(), session); err != nil {
-		t.Fatalf("Failed to create session: %v", err)
-	}
-
-	// Issue token for ToolA
-	token, err := service.IssueToken(t.Context(), sessionID, "ToolA")
-	if err != nil {
-		t.Fatalf("Failed to issue token: %v", err)
-	}
-
-	// Validate should succeed (does not consume with new implementation)
-	err = service.ValidateToolCall(t.Context(), sessionID, "ToolB", token)
-	if err != nil {
-		t.Fatalf("ValidateToolCall() error = %v", err)
-	}
-
-	// Token should still be valid before consumption
-	validTokens, _ := tokenStore.GetValidTokens(t.Context(), sessionID, "ToolA")
-	if len(validTokens) == 0 {
-		t.Error("Token should exist before consumption")
-	}
-
-	// Consume the token (simulating post-success)
-	err = service.ConsumePrerequisiteToken(t.Context(), sessionID, "ToolB")
-	if err != nil {
-		t.Errorf("ConsumePrerequisiteToken() error = %v", err)
-	}
-
-	// Token should now be consumed
-	validTokens, _ = tokenStore.GetValidTokens(t.Context(), sessionID, "ToolA")
-	if len(validTokens) != 0 {
-		t.Error("Token should be consumed after ConsumePrerequisiteToken")
-	}
-}
-
 func TestRatchetServiceImpl_ObservabilityEvents(t *testing.T) {
 	ctx := t.Context()
 	sessionID := domain.SessionID("obs-session")
 
 	eventStore := adapters.NewMemoryEventStore(0)
-	sessionStore := adapters.NewMemorySessionStore()
 	tokenStore := adapters.NewMemoryTokenStore()
 
 	service := NewRatchetServiceWithObservability(
 		adapters.NewYAMLConfigLoader(),
 		tokenStore,
-		sessionStore,
 		adapters.NewCryptoRandomGenerator(),
 		adapters.NewRealClock(),
 		eventStore,
 	)
 
-	// Register a rule
-	rule := domain.Rule{Tool: "tool_b", Prerequisite: "tool_a", Expiry: time.Minute}
-	_ = service.RegisterRule(ctx, rule)
-
-	// Create session
-	session := domain.NewSession(sessionID)
-	_ = sessionStore.Create(ctx, session)
-
-	// Attempt tool_b without prerequisite — should emit failure event
-	_ = service.ValidateToolCall(ctx, sessionID, "tool_b", "")
-
+	if err := service.RegisterRule(ctx, domain.Rule{Tool: "tool_b", Prerequisite: "tool_a", ErrorMessage: "discover first"}); err != nil {
+		t.Fatal(err)
+	}
+	success := func() (bool, error) { return true, nil }
+	if err := service.ExecuteToolCall(ctx, sessionID, "tool_b", func() (bool, error) {
+		t.Fatal("denied tool ran")
+		return false, nil
+	}); err == nil || err.Error() != "discover first" {
+		t.Fatalf("expected configured denial, got %v", err)
+	}
+	for _, tool := range []domain.ToolName{"tool_a", "tool_b"} {
+		if err := service.ExecuteToolCall(ctx, sessionID, tool, success); err != nil {
+			t.Fatal(err)
+		}
+	}
 	stats, err := service.GetObservabilityStats(ctx)
 	if err != nil {
-		t.Fatalf("GetObservabilityStats() error = %v", err)
+		t.Fatal(err)
 	}
-	if stats.EventsByType[domain.EventTypeToolCallAttempt] != 1 {
-		t.Errorf("want 1 tool_call_attempt event, got %d", stats.EventsByType[domain.EventTypeToolCallAttempt])
-	}
-	if stats.EventsByType[domain.EventTypeToolCallFailure] != 1 {
-		t.Errorf("want 1 tool_call_failure event, got %d", stats.EventsByType[domain.EventTypeToolCallFailure])
-	}
-
-	// Issue a token for tool_a and record the call, then validate tool_b
-	session, _ = sessionStore.Get(ctx, sessionID)
-	session.RecordToolCall("tool_a")
-	_ = sessionStore.Update(ctx, session)
-	_, _ = service.IssueToken(ctx, sessionID, "tool_a")
-
-	_ = service.ValidateToolCall(ctx, sessionID, "tool_b", "")
-
-	stats, _ = service.GetObservabilityStats(ctx)
-	if stats.EventsByType[domain.EventTypeToolCallSuccess] != 1 {
-		t.Errorf("want 1 tool_call_success event, got %d", stats.EventsByType[domain.EventTypeToolCallSuccess])
-	}
-	if stats.TokensIssued != 1 {
-		t.Errorf("want 1 token issued, got %d", stats.TokensIssued)
+	if stats.EventsByType[domain.EventTypeToolCallAttempt] != 3 ||
+		stats.EventsByType[domain.EventTypeToolCallFailure] != 1 ||
+		stats.EventsByType[domain.EventTypeToolCallSuccess] != 2 ||
+		stats.EventsByType[domain.EventTypeSessionCreated] != 1 || stats.TokensIssued != 1 {
+		t.Fatalf("unexpected workflow stats: %+v", stats)
 	}
 }
 
@@ -447,7 +113,6 @@ func TestRatchetServiceImpl_ObservabilityDisabled(t *testing.T) {
 	service := NewRatchetService(
 		adapters.NewYAMLConfigLoader(),
 		adapters.NewMemoryTokenStore(),
-		adapters.NewMemorySessionStore(),
 		adapters.NewCryptoRandomGenerator(),
 		adapters.NewRealClock(),
 	)
@@ -471,79 +136,6 @@ func TestRatchetServiceImpl_ObservabilityDisabled(t *testing.T) {
 	}
 }
 
-func TestRatchetServiceImpl_ValidateToolCall_MultipleRules_ORLogic(t *testing.T) {
-	sessionStore := adapters.NewMemorySessionStore()
-	tokenStore := adapters.NewMemoryTokenStore()
-	service := NewRatchetService(
-		adapters.NewYAMLConfigLoader(),
-		tokenStore,
-		sessionStore,
-		adapters.NewCryptoRandomGenerator(),
-		adapters.NewRealClock(),
-	)
-
-	ctx := t.Context()
-
-	// ToolC can be called after ToolA OR ToolB (two rules, OR logic)
-	rules := []domain.Rule{
-		{Tool: "ToolC", Prerequisite: "ToolA", Expiry: 5 * time.Minute, ErrorMessage: "need ToolA or ToolB"},
-		{Tool: "ToolC", Prerequisite: "ToolB", Expiry: 5 * time.Minute, ErrorMessage: "need ToolA or ToolB"},
-	}
-	for _, r := range rules {
-		if err := service.RegisterRule(ctx, r); err != nil {
-			t.Fatalf("RegisterRule: %v", err)
-		}
-	}
-
-	sessionID := domain.SessionID("test-or-session")
-
-	t.Run("fails when neither prerequisite called", func(t *testing.T) {
-		ctx := t.Context()
-		session := domain.NewSession(sessionID)
-		if err := sessionStore.Create(ctx, session); err != nil {
-			t.Fatalf("Create session: %v", err)
-		}
-		err := service.ValidateToolCall(ctx, sessionID, "ToolC", "")
-		if err == nil {
-			t.Error("expected error when no prerequisite called")
-		}
-	})
-
-	t.Run("succeeds when only ToolB called (second rule satisfied)", func(t *testing.T) {
-		ctx := t.Context()
-		// Reset session with ToolB called
-		session := domain.NewSession(sessionID)
-		session.RecordToolCall("ToolB")
-		if err := sessionStore.Update(ctx, session); err != nil {
-			t.Fatalf("Update session: %v", err)
-		}
-		_, err := service.IssueToken(ctx, sessionID, "ToolB")
-		if err != nil {
-			t.Fatalf("IssueToken: %v", err)
-		}
-		if err := service.ValidateToolCall(ctx, sessionID, "ToolC", ""); err != nil {
-			t.Errorf("expected success when ToolB called, got: %v", err)
-		}
-	})
-
-	t.Run("succeeds when only ToolA called (first rule satisfied)", func(t *testing.T) {
-		ctx := t.Context()
-		sessionID2 := domain.SessionID("test-or-session-2")
-		session := domain.NewSession(sessionID2)
-		session.RecordToolCall("ToolA")
-		if err := sessionStore.Create(ctx, session); err != nil {
-			t.Fatalf("Create session: %v", err)
-		}
-		_, err := service.IssueToken(ctx, sessionID2, "ToolA")
-		if err != nil {
-			t.Fatalf("IssueToken: %v", err)
-		}
-		if err := service.ValidateToolCall(ctx, sessionID2, "ToolC", ""); err != nil {
-			t.Errorf("expected success when ToolA called, got: %v", err)
-		}
-	})
-}
-
 // mockClock implements the Clock interface for testing
 type mockClock struct {
 	now time.Time
@@ -556,8 +148,7 @@ func (m *mockClock) Now() time.Time {
 func TestWorkflowBoundsAndExpiresPrerequisites(t *testing.T) {
 	clock := &mockClock{now: time.Now()}
 	tokens := adapters.NewMemoryTokenStore()
-	sessions := adapters.NewMemorySessionStore()
-	service := NewRatchetService(adapters.NewYAMLConfigLoader(), tokens, sessions, adapters.NewCryptoRandomGenerator(), clock)
+	service := NewRatchetService(adapters.NewYAMLConfigLoader(), tokens, adapters.NewCryptoRandomGenerator(), clock)
 	for _, rule := range []domain.Rule{
 		{Tool: "read", Expiry: time.Hour},
 		{Tool: "write", Prerequisite: "read", OneTimeUse: true},
@@ -574,13 +165,16 @@ func TestWorkflowBoundsAndExpiresPrerequisites(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	valid, err := tokens.GetValidTokens(t.Context(), id, "read")
-	if err != nil || len(valid) != adapters.MaxTokensPerTool {
-		t.Fatalf("tokens = %d, error = %v", len(valid), err)
+	for range adapters.MaxTokensPerTool {
+		if err := run(t.Context(), id, "write", success); err != nil {
+			t.Fatal(err)
+		}
 	}
-	session, err := sessions.Get(t.Context(), id)
-	if err != nil || len(session.ToolHistory) != 1 || len(session.Tokens) != 0 {
-		t.Fatalf("unexpected session snapshot: %+v, error = %v", session, err)
+	if err := run(t.Context(), id, "write", success); !errors.Is(err, domain.ErrInvalidToken) {
+		t.Fatalf("expected denial after consuming the bounded set, got %v", err)
+	}
+	if err := run(t.Context(), id, "read", success); err != nil {
+		t.Fatal(err)
 	}
 	clock.now = clock.now.Add(workflowIdleTimeout)
 	if err := run(t.Context(), id, "write", func() (bool, error) {
@@ -589,13 +183,13 @@ func TestWorkflowBoundsAndExpiresPrerequisites(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected expired session to require a new read")
 	}
-	if valid, err := tokens.GetValidTokens(t.Context(), id, "read"); err != nil || len(valid) != 0 {
-		t.Fatalf("idle tokens = %d, error = %v", len(valid), err)
+	if live, err := tokens.HasLiveTokens(t.Context(), id, clock.now); err != nil || live {
+		t.Fatalf("live idle tokens = %v, error = %v", live, err)
 	}
 }
 
 func TestWorkflowWaitCancellationAndSessionIndependence(t *testing.T) {
-	service := NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewMemorySessionStore(), adapters.NewCryptoRandomGenerator(), adapters.NewRealClock())
+	service := NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewCryptoRandomGenerator(), adapters.NewRealClock())
 	run := service.ExecuteToolCall
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
@@ -632,7 +226,7 @@ func TestWorkflowWaitCancellationAndSessionIndependence(t *testing.T) {
 
 func TestWorkflowUsesIssuingToolExpiry(t *testing.T) {
 	clock := &mockClock{now: time.Now()}
-	service := NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewMemorySessionStore(), adapters.NewCryptoRandomGenerator(), clock)
+	service := NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewCryptoRandomGenerator(), clock)
 	for _, rule := range []domain.Rule{
 		{Tool: "read", Expiry: time.Second},
 		{Tool: "write", Prerequisite: "read"},
@@ -651,5 +245,25 @@ func TestWorkflowUsesIssuingToolExpiry(t *testing.T) {
 		return true, nil
 	}); err == nil {
 		t.Fatal("expected token expiry at the configured boundary")
+	}
+}
+
+func TestDeniedWorkflowsDoNotConsumeSessionCapacity(t *testing.T) {
+	service := NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewCryptoRandomGenerator(), adapters.NewRealClock())
+	if err := service.RegisterRule(t.Context(), domain.Rule{Tool: "write", Prerequisite: "read"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range maxWorkflowSessions + 1 {
+		id := domain.SessionID(fmt.Sprintf("denied-%d", i))
+		err := service.ExecuteToolCall(t.Context(), id, "write", func() (bool, error) {
+			t.Fatal("denied handler executed")
+			return false, nil
+		})
+		if !errors.Is(err, domain.ErrInvalidToken) {
+			t.Fatalf("denial %d: %v", i, err)
+		}
+	}
+	if err := service.ExecuteToolCall(t.Context(), "new-client", "read", func() (bool, error) { return true, nil }); err != nil {
+		t.Fatalf("new session failed to start discovery: %v", err)
 	}
 }

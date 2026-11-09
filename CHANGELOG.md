@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-09
+
+### Fixed
+
+- Release session slots when calls finish without live prerequisites. Expired prerequisites no longer keep idle sessions resident until the idle timeout.
+- Use live prerequisite tokens as the executor's completion state and avoid a duplicate session history.
+
+### Changed
+
+- Add a write-only `EventSink` for live observability. Historical event stores still support queries.
+- Replace separate validation, consumption, issuance, and session creation with `ExecuteToolCall`. Service constructors no longer accept a session store.
+- Custom token stores must implement `HasLiveTokens`. The unused event-store factory and broadcasting adapter were removed.
+
 ## [0.2.0] - 2026-11-09
 
 ### Workflow execution

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/domain"
-	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 )
 
 const (
@@ -24,16 +23,17 @@ type workflowSessions struct {
 }
 
 type workflowSession struct {
-	running chan struct{}
-	users   int
-	idleAt  time.Time
+	running  chan struct{}
+	users    int
+	idleAt   time.Time
+	retained bool
 }
 
 // acquireWorkflowSession serializes one session without blocking unrelated
 // sessions. Idle state is reclaimed during subsequent activity.
-func (s *RatchetServiceImpl) acquireWorkflowSession(ctx context.Context, id domain.SessionID) (func(), error) {
+func (s *RatchetServiceImpl) acquireWorkflowSession(ctx context.Context, id domain.SessionID) (release func(), retained bool, err error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	state := &s.workflow
 	state.mu.Lock()
@@ -46,7 +46,7 @@ func (s *RatchetServiceImpl) acquireWorkflowSession(ctx context.Context, id doma
 		(entry != nil && entry.users == 0 && !now.Before(entry.idleAt.Add(workflowIdleTimeout))) {
 		if err := s.sweepWorkflowSessions(ctx, now); err != nil {
 			state.mu.Unlock()
-			return nil, err
+			return nil, false, err
 		}
 		state.nextSweep = now.Add(workflowSweepPeriod)
 	}
@@ -54,7 +54,7 @@ func (s *RatchetServiceImpl) acquireWorkflowSession(ctx context.Context, id doma
 	if entry == nil {
 		if len(state.entries) >= maxWorkflowSessions {
 			state.mu.Unlock()
-			return nil, errors.New("ratchet session limit reached")
+			return nil, false, errors.New("ratchet session limit reached")
 		}
 		entry = &workflowSession{running: make(chan struct{}, 1)}
 		state.entries[id] = entry
@@ -62,38 +62,54 @@ func (s *RatchetServiceImpl) acquireWorkflowSession(ctx context.Context, id doma
 	entry.users++
 	state.mu.Unlock()
 
-	releaseUser := func() {
-		state.mu.Lock()
-		entry.users--
-		if entry.users == 0 {
-			entry.idleAt = s.clock.Now()
-		}
-		state.mu.Unlock()
-	}
 	select {
 	case entry.running <- struct{}{}:
 		return func() {
+			retained, err := s.tokenStore.HasLiveTokens(context.WithoutCancel(ctx), id, s.clock.Now())
+			state.mu.Lock()
+			entry.retained = retained || err != nil
+			s.releaseWorkflowUser(id, entry)
+			state.mu.Unlock()
 			<-entry.running
-			releaseUser()
-		}, nil
+		}, entry.retained, nil
 	case <-ctx.Done():
-		releaseUser()
-		return nil, ctx.Err()
+		state.mu.Lock()
+		s.releaseWorkflowUser(id, entry)
+		state.mu.Unlock()
+		return nil, false, ctx.Err()
 	}
+}
+
+// releaseWorkflowUser runs with workflow.mu held.
+func (s *RatchetServiceImpl) releaseWorkflowUser(id domain.SessionID, entry *workflowSession) {
+	entry.users--
+	if entry.users != 0 {
+		return
+	}
+	if !entry.retained {
+		delete(s.workflow.entries, id)
+		return
+	}
+	entry.idleAt = s.clock.Now()
 }
 
 // sweepWorkflowSessions runs with workflow.mu held. Queued and running calls
 // retain their session until the last caller releases it.
 func (s *RatchetServiceImpl) sweepWorkflowSessions(ctx context.Context, now time.Time) error {
 	for id, entry := range s.workflow.entries {
-		if entry.users != 0 || now.Before(entry.idleAt.Add(workflowIdleTimeout)) {
+		if entry.users != 0 {
 			continue
 		}
-		if err := s.tokenStore.DeleteSession(ctx, id); err != nil {
+		if now.Before(entry.idleAt.Add(workflowIdleTimeout)) {
+			retained, err := s.tokenStore.HasLiveTokens(ctx, id, now)
+			if err != nil {
+				return fmt.Errorf("check idle Ratchet tokens: %w", err)
+			}
+			if retained {
+				continue
+			}
+		} else if err := s.tokenStore.DeleteSession(ctx, id); err != nil {
 			return fmt.Errorf("clear idle Ratchet tokens: %w", err)
-		}
-		if err := s.sessionStore.Delete(ctx, id); err != nil && !errors.Is(err, secondary.ErrSessionNotFound) {
-			return fmt.Errorf("clear idle Ratchet session: %w", err)
 		}
 		delete(s.workflow.entries, id)
 	}

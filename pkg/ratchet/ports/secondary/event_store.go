@@ -25,13 +25,16 @@ type EventFilter struct {
 	Limit int
 }
 
-// EventStore defines the secondary port for storing and retrieving ratchet observability events.
-// Implementations must be safe for concurrent use.
-// The event store is a pure side-effect sink — it never influences core ratchet decisions.
-type EventStore interface {
+// EventSink receives lifecycle events and must be safe for concurrent use.
+type EventSink interface {
 	// Store persists an event. Errors should be logged by the caller but never
 	// cause the core ratchet operation to fail.
 	Store(ctx context.Context, event *domain.Event) error
+}
+
+// EventStore also provides optional event history and statistics.
+type EventStore interface {
+	EventSink
 
 	// GetEvents retrieves events for a session matching the given filter.
 	GetEvents(ctx context.Context, sessionID domain.SessionID, filter *EventFilter) ([]*domain.Event, error)

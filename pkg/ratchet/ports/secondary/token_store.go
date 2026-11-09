@@ -15,6 +15,7 @@ var ErrTokenNotFound = errors.New("token not found")
 type TokenStore interface {
 	Store(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue, expiry time.Time) error
 	LatestToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, now time.Time) (domain.TokenValue, bool, error)
+	HasLiveTokens(ctx context.Context, sessionID domain.SessionID, now time.Time) (bool, error)
 	DeleteSession(ctx context.Context, sessionID domain.SessionID) error
 	RemoveToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error
 }

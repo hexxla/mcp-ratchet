@@ -18,8 +18,7 @@ import (
 
 func TestWrapperIsolatesSessionsAndReservesMatchingAlternative(t *testing.T) {
 	ctx := t.Context()
-	sessions := adapters.NewMemorySessionStore()
-	service := services.NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), sessions, adapters.NewCryptoRandomGenerator(), adapters.NewRealClock())
+	service := services.NewRatchetService(adapters.NewYAMLConfigLoader(), adapters.NewMemoryTokenStore(), adapters.NewCryptoRandomGenerator(), adapters.NewRealClock())
 	for _, rule := range []domain.Rule{
 		{Tool: "mutate", Prerequisite: "discover_a", OneTimeUse: true},
 		{Tool: "mutate", Prerequisite: "discover_b", OneTimeUse: true},
