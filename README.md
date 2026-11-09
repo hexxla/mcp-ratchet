@@ -34,10 +34,9 @@ Use Go 1.27.3 or newer.
 go get github.com/hexxla/mcp-ratchet
 ```
 
-The library is distributed through Go module tags. The
-[module tag workflow](.github/workflows/tag.yml) validates tags reachable
-from `main`. Verify CI on `main` before pushing a version tag. To build the
-demonstration binary locally, run `make build`.
+The library is distributed through Go module tags. Tag a commit from `main`
+after its [CI check](.github/workflows/ci.yml) passes. To build the demo
+locally, run `make build`.
 
 
 ## Usage

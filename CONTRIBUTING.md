@@ -67,6 +67,15 @@ Please be respectful and constructive in all interactions.
 If you are unsure where to start, open an issue to discuss the change before implementing it.
 
 
+## CI
+
+Run `make ci` before pushing. GitHub Actions runs the same module, workflow,
+lint, race test, command build, and Go vulnerability checks on pull requests
+and pushes to `main`. It also scans the commit range for secrets.
+
+Run `scripts/tool.sh golangci-lint run --enable modernize ./...` for an
+optional modernization pass.
+
 ## GitHub repository settings
 
 After the new workflow passes on a pull request, configure the `main` ruleset

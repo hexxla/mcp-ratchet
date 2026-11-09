@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI pipeline with formatting, linting, tests, and architecture guardrails
 - Comprehensive documentation for each architectural layer
 
+### Changed
+
+- **Development workflow** — Use the CI check on `main` to validate version tags and narrow routine lint checks.
+
 ### Fixed
 
 - Isolate MCP calls by transport session and reserve the exact matching one-time prerequisite before the handler. Return detached in-memory session snapshots.

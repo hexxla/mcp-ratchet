@@ -34,4 +34,4 @@ This project follows security best practices including:
 - Secret scanning in CI/CD pipeline
 - Regular dependency updates
 
-For more information on our security practices, see the [Guardrails & CI/CD](README.md#guardrails--cicd) section in the README.
+For more information on our security practices, see the [CI guide](CONTRIBUTING.md#ci).

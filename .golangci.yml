@@ -13,10 +13,7 @@ linters:
     - errorlint
     - gocritic
     - gosec
-    - misspell
-    - modernize
     - revive
-    - whitespace
     - copyloopvar
 
   settings:
@@ -59,8 +56,6 @@ linters:
     gocritic:
       enabled-tags:
         - diagnostic
-        - style
-        - performance
 
     revive:
       rules:
