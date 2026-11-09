@@ -1,6 +1,6 @@
 # Makefile for MCP Ratchet
 
-.PHONY: help build test lint fmt ci clean install run run-ws-test tidy vet update govulncheck \
+.PHONY: help build test lint fmt ci clean install run tidy vet update govulncheck \
 	build-linux build-darwin build-windows build-all
 
 # Bare `make` runs the full CI pipeline (same as `make ci`). Use `make help` to list targets.
@@ -73,9 +73,6 @@ help:
 
 run:
 	go run ./cmd/mcp-ratchet-demo
-
-run-ws-test:
-	go run ./cmd/ws-test -session "$$MCP_SESSION_ID"
 
 clean:
 	rm -rf bin

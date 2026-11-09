@@ -12,7 +12,7 @@ type Rule struct {
 	Prerequisite ToolName      `yaml:"prerequisite"`
 	Expiry       time.Duration `yaml:"expiry"`
 	ErrorMessage string        `yaml:"error_message"`
-	OneTimeUse   bool          `yaml:"one_time_use"` // If true, token is consumed after use
+	OneTimeUse   bool          `yaml:"one_time_use"` // Reserve the prerequisite before running the tool.
 }
 
 // Validate checks if the rule is valid.
@@ -25,6 +25,12 @@ func (r *Rule) Validate() error {
 		if err := r.Prerequisite.Validate(); err != nil {
 			return fmt.Errorf("prerequisite validation failed: %w", err)
 		}
+	}
+	if r.Expiry < 0 {
+		return errors.New("token expiry cannot be negative")
+	}
+	if r.Prerequisite == "" && r.OneTimeUse {
+		return errors.New("one-time use requires a prerequisite")
 	}
 	if r.Tool == r.Prerequisite {
 		return errors.New("tool cannot depend on itself")

@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -9,9 +10,12 @@ import (
 	"github.com/hexxla/mcp-ratchet/pkg/ratchet/ports/secondary"
 )
 
-// MemoryTokenStore implements TokenStore using in-memory storage
+// MaxTokensPerTool bounds the number of pending completions per session and tool.
+const MaxTokensPerTool = 64
+
+// MemoryTokenStore stores recent tool completions in memory.
 type MemoryTokenStore struct {
-	mu     sync.RWMutex
+	mu     sync.Mutex
 	tokens map[domain.SessionID]map[domain.ToolName][]tokenEntry
 }
 
@@ -20,78 +24,85 @@ type tokenEntry struct {
 	expires time.Time
 }
 
-// NewMemoryTokenStore creates a new in-memory token store
-func NewMemoryTokenStore() secondary.TokenStore {
-	return &MemoryTokenStore{
-		tokens: make(map[domain.SessionID]map[domain.ToolName][]tokenEntry),
-	}
+// NewMemoryTokenStore creates an in-memory token store.
+func NewMemoryTokenStore() *MemoryTokenStore {
+	return &MemoryTokenStore{tokens: make(map[domain.SessionID]map[domain.ToolName][]tokenEntry)}
 }
 
-// Store stores a token
-func (m *MemoryTokenStore) Store(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue, expiry time.Time) error {
+// Store records a completion, dropping the oldest entry at the per-tool limit.
+func (m *MemoryTokenStore) Store(_ context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue, expiry time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if _, ok := m.tokens[sessionID]; !ok {
-		m.tokens[sessionID] = make(map[domain.ToolName][]tokenEntry)
+	entries := m.tokens[sessionID][tool]
+	if len(entries) == MaxTokensPerTool {
+		entries = slices.Delete(entries, 0, 1)
 	}
-
-	m.tokens[sessionID][tool] = append(m.tokens[sessionID][tool], tokenEntry{
-		value:   token,
-		expires: expiry,
-	})
-
+	m.setEntries(sessionID, tool, append(entries, tokenEntry{value: token, expires: expiry}))
 	return nil
 }
 
-// GetValidTokens returns all valid (non-expired) tokens for a tool
-func (m *MemoryTokenStore) GetValidTokens(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) ([]domain.TokenValue, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	sessionTokens, ok := m.tokens[sessionID]
-	if !ok {
-		return []domain.TokenValue{}, nil
+// LatestToken returns the newest valid token at the supplied time.
+func (m *MemoryTokenStore) LatestToken(_ context.Context, sessionID domain.SessionID, tool domain.ToolName, now time.Time) (domain.TokenValue, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries := liveEntries(m.tokens[sessionID][tool], now)
+	m.setEntries(sessionID, tool, entries)
+	if len(entries) == 0 {
+		return "", false, nil
 	}
+	return entries[len(entries)-1].value, true, nil
+}
 
-	toolTokens, ok := sessionTokens[tool]
-	if !ok {
-		return []domain.TokenValue{}, nil
+// GetValidTokens returns a detached list of valid completions.
+func (m *MemoryTokenStore) GetValidTokens(_ context.Context, sessionID domain.SessionID, tool domain.ToolName) ([]domain.TokenValue, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries := liveEntries(m.tokens[sessionID][tool], time.Now())
+	m.setEntries(sessionID, tool, entries)
+	tokens := make([]domain.TokenValue, len(entries))
+	for i, entry := range entries {
+		tokens[i] = entry.value
 	}
-
-	now := time.Now()
-	validTokens := make([]domain.TokenValue, 0)
-	for _, entry := range toolTokens {
-		if now.Before(entry.expires) {
-			validTokens = append(validTokens, entry.value)
-		}
-	}
-
-	return validTokens, nil
+	return tokens, nil
 }
 
 // RemoveToken removes a specific token.
-// Returns ErrTokenNotFound if the token does not exist.
-func (m *MemoryTokenStore) RemoveToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
+func (m *MemoryTokenStore) RemoveToken(_ context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	sessionTokens, ok := m.tokens[sessionID]
-	if !ok {
+	entries := m.tokens[sessionID][tool]
+	i := slices.IndexFunc(entries, func(entry tokenEntry) bool { return entry.value == token })
+	if i < 0 {
 		return secondary.ErrTokenNotFound
 	}
+	m.setEntries(sessionID, tool, slices.Delete(entries, i, i+1))
+	return nil
+}
 
-	toolTokens, ok := sessionTokens[tool]
-	if !ok {
-		return secondary.ErrTokenNotFound
-	}
+// DeleteSession releases the session's token state.
+func (m *MemoryTokenStore) DeleteSession(_ context.Context, sessionID domain.SessionID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.tokens, sessionID)
+	return nil
+}
 
-	for i, entry := range toolTokens {
-		if entry.value == token {
-			m.tokens[sessionID][tool] = append(toolTokens[:i], toolTokens[i+1:]...)
-			return nil
+func liveEntries(entries []tokenEntry, now time.Time) []tokenEntry {
+	return slices.DeleteFunc(entries, func(entry tokenEntry) bool { return !now.Before(entry.expires) })
+}
+
+func (m *MemoryTokenStore) setEntries(sessionID domain.SessionID, tool domain.ToolName, entries []tokenEntry) {
+	tools := m.tokens[sessionID]
+	if len(entries) == 0 {
+		delete(tools, tool)
+		if len(tools) == 0 {
+			delete(m.tokens, sessionID)
 		}
+		return
 	}
-
-	return secondary.ErrTokenNotFound
+	if tools == nil {
+		tools = make(map[domain.ToolName][]tokenEntry)
+		m.tokens[sessionID] = tools
+	}
+	tools[tool] = entries
 }

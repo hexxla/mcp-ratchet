@@ -40,7 +40,7 @@ func TestWrapperIsolatesSessionsAndReservesMatchingAlternative(t *testing.T) {
 			}
 			return &mcp.CallToolResult{IsError: in.Fail}, struct{}{}, nil
 		}
-		mcp.AddTool(srv, &mcp.Tool{Name: string(name)}, ratchetmcp.WrapWithRatchet(name, handle, service, sessions, nil))
+		mcp.AddTool(srv, &mcp.Tool{Name: string(name)}, ratchetmcp.WrapWithRatchet(name, handle, service))
 	}
 	httpServer := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil))
 	t.Cleanup(httpServer.Close)

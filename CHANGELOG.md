@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
+### Workflow execution
+
+- Bound in-memory workflow sessions and completions, reclaim idle state, and
+  serialize only calls in the same session. The built-in token store drops
+  expired completions on lookup.
+- Reject unknown YAML fields, extra documents, duplicate edges, cycles, mixed
+  guarded and unguarded rules, and conflicting producer expiry values.
+- Remove the demo's HTTP and WebSocket observability and the standalone
+  WebSocket test command.
+
+### API changes
+
+- `WrapWithRatchet` takes the workflow executor directly. The service
+  constructors return the concrete service so it can be passed without a cast.
+- Custom token stores now provide `LatestToken` and `DeleteSession` for expiry
+  checks and cleanup.
+
 ### Added
 
 - Initial project structure with hexagonal architecture (domain, port, service, adapter)
@@ -50,5 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standardized project layout for LLM-friendly hexagonal architecture templates
 
-[Unreleased]: https://github.com/hexxla/mcp-ratchet/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hexxla/mcp-ratchet/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hexxla/mcp-ratchet/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hexxla/mcp-ratchet/releases/tag/v0.1.0

@@ -17,7 +17,7 @@ type RatchetService interface {
 	ValidateToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, token domain.TokenValue) error
 
 	// ConsumePrerequisiteToken consumes the prerequisite token for one-time-use rules.
-	// Should be called after successful tool execution.
+	// Prefer WorkflowExecutor so selection and reservation are serialized.
 	ConsumePrerequisiteToken(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName) error
 
 	// IssueToken creates a new ratchet token after successful execution
@@ -43,7 +43,8 @@ type RatchetService interface {
 
 // WorkflowExecutor runs a call with session-scoped prerequisite enforcement.
 // The callback reports whether the tool succeeded. A failed tool does not issue
-// a token. A one-time prerequisite is spent before the callback runs.
+// a token. A one-time prerequisite is spent before the callback runs. A
+// successful tool issues a token only if another rule depends on it.
 type WorkflowExecutor interface {
 	ExecuteToolCall(ctx context.Context, sessionID domain.SessionID, tool domain.ToolName, run func() (bool, error)) error
 }

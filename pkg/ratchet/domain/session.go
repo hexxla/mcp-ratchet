@@ -32,7 +32,9 @@ func NewSessionWithTime(id SessionID, createdAt time.Time) *Session {
 
 // RecordToolCall records that a tool was called in this session.
 func (s *Session) RecordToolCall(tool ToolName) {
-	s.ToolHistory = append(s.ToolHistory, tool)
+	if !s.HasToolBeenCalled(tool) {
+		s.ToolHistory = append(s.ToolHistory, tool)
+	}
 }
 
 // AddToken adds a token to the session for the given tool.
@@ -45,7 +47,7 @@ func (s *Session) RemoveToken(tool ToolName, token TokenValue) {
 	tokens := s.Tokens[tool]
 	for i, t := range tokens {
 		if t == token {
-			s.Tokens[tool] = append(tokens[:i], tokens[i+1:]...)
+			s.Tokens[tool] = slices.Delete(tokens, i, i+1)
 			break
 		}
 	}

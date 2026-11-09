@@ -11,11 +11,6 @@ import (
 // MCPConfig holds server-level configuration (separate from ratchet core config).
 // These settings control how the MCP server exposes ratchet functionality.
 type MCPConfig struct {
-	Observability struct {
-		HTTPEnabled      bool   `yaml:"http_enabled"`
-		WebSocketEnabled bool   `yaml:"websocket_enabled"`
-		WebSocketPath    string `yaml:"websocket_path"`
-	} `yaml:"observability"`
 	Server struct {
 		Addr    string `yaml:"addr"`
 		MCPPath string `yaml:"mcp_path"`
@@ -32,9 +27,6 @@ func loadMCPConfig(path string) (*MCPConfig, error) {
 		return nil, fmt.Errorf("failed to parse MCP config: %w", err)
 	}
 	// Set defaults
-	if cfg.Observability.WebSocketPath == "" {
-		cfg.Observability.WebSocketPath = "/observability/stream"
-	}
 	if cfg.Server.Addr == "" {
 		cfg.Server.Addr = "127.0.0.1:8080"
 	}
