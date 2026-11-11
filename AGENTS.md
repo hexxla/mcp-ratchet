@@ -10,6 +10,7 @@
 ## Go and verification
 
 - Use the Go version declared in `go.mod`. Follow the surrounding code and `.golangci.yml`. Wrap error causes with `%w` where callers need to inspect them.
+- In Codex, use the [JetBrains Modern Go Guidelines plugin](https://github.com/JetBrains/go-modern-guidelines#codex) when available.
 - Run focused package tests first. Use `make test` for race tests and `make ci` before pushing.
 - The [optional Git hook](.githooks/README.md) scans staged changes for secrets. Keep commit subjects short and follow Conventional Commits.
 

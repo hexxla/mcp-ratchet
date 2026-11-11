@@ -103,6 +103,11 @@ calls release empty state immediately. Expired completions and sessions idle
 for 30 minutes are reclaimed during later activity, including admission at
 capacity. State is lost on process restart.
 
+A successful prerequisite records call completion within the supplied session.
+Applications still decide whether retrieved data is relevant and which resources
+the next call may change. A handler may have performed an external write before
+its response failed. The host owns reconciliation and idempotent retry behavior.
+
 ## Observe events
 
 Set `ratchet.Options{Observer: observe}` to receive typed `ratchet.Event`

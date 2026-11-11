@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Check cancellation after observer callbacks so canceled tool calls cannot execute their handlers.
+
 - Grant prerequisites only after SDK output validation and serialization succeed. SDK 1.7 input-required and load-shedding responses create no completion; continuation RPCs need fresh consumed prerequisites. Snapshot every wire field, including input requests and request state, while preserving large JSON numbers, null/empty shapes, metadata, single-evaluation user marshalers, SDK error causes, and SDK server-info decoration.
 - Preserve exact one-time spending before calls, tool-error responses, queued cancellation, failed-handler denial, and session isolation. Reclaim expired idle state before rejecting new sessions at capacity; maintenance does not extend idle lifetime.
 - Eliminate event-history aliasing and statistics races through immutable value events and detached query slices/maps.
@@ -23,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace placeholder security and conduct contacts, update supported versions, and correct stale protocol, architecture, release-check, and changelog-link guidance.
 
 ### Changed
+
+- Consolidate the overview and library entry points into the repository guide while preserving the host write-retry contract.
 
 - **Go and dependencies** — Require Go 1.27.4 and update imported Go modules.
 

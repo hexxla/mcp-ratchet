@@ -63,6 +63,9 @@ func New(policy Policy, options Options) (*Engine, error) {
 // the reservation and records no completion. The handler's error is preserved;
 // false with no error returns nil so transports can retain their own error result.
 // Only tools used as prerequisites produce completions. Queued calls honor ctx.
+// Cancellation observed before consumption preserves the prerequisite.
+// Cancellation observed after consumption but before dispatch skips the handler
+// and leaves the prerequisite spent.
 func (e *Engine) ExecuteToolCall(ctx context.Context, sessionID, tool string, run func() (bool, error)) error {
 	if sessionID == "" || tool == "" || run == nil {
 		return fmt.Errorf("%w: session ID, tool and handler are required", ErrInvalidCall)
@@ -81,6 +84,10 @@ func (e *Engine) ExecuteToolCall(ctx context.Context, sessionID, tool string, ru
 	entry.prune(e.now())
 	hadCompletions := len(entry.completions) != 0
 	prerequisite, consume, err := e.selectPrerequisite(entry, tool)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		e.emit(Event{Type: EventTypeToolCallFailure, SessionID: sessionID, ToolName: tool, Error: ctxErr.Error()})
+		return ctxErr
+	}
 	if err != nil {
 		e.emit(Event{Type: EventTypeToolCallFailure, SessionID: sessionID, ToolName: tool, Error: err.Error()})
 		return err
@@ -90,6 +97,10 @@ func (e *Engine) ExecuteToolCall(ctx context.Context, sessionID, tool string, ru
 		expires := values[len(values)-1]
 		entry.set(prerequisite, slices.Delete(values, len(values)-1, len(values)))
 		e.emit(Event{Type: EventTypeCompletionConsumed, SessionID: sessionID, ToolName: prerequisite, ExpiresAt: expires, ConsumedBy: tool})
+		if err := ctx.Err(); err != nil {
+			e.emit(Event{Type: EventTypeToolCallFailure, SessionID: sessionID, ToolName: tool, Error: err.Error()})
+			return err
+		}
 	}
 	ok, err := run()
 	if err != nil || !ok {

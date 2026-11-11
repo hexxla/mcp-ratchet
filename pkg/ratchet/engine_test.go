@@ -425,6 +425,39 @@ func TestEngineInvalidAndCanceledCalls(t *testing.T) {
 	}
 }
 
+func TestEngineObserverCancellationPreventsHandler(t *testing.T) {
+	for _, eventType := range []EventType{EventTypeToolCallAttempt, EventTypeCompletionConsumed} {
+		t.Run(string(eventType), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			armed := true
+			engine, _ := testEngine(t, Policy{Rules: []Rule{{Tool: "write", AfterAny: []string{"read"}, Consume: true}}}, Options{Observer: func(event Event) {
+				if armed && event.Type == eventType && (event.ToolName == "write" || event.ConsumedBy == "write") {
+					cancel()
+				}
+			}})
+			if err := engine.ExecuteToolCall(t.Context(), "session", "read", success); err != nil {
+				t.Fatal(err)
+			}
+			err := engine.ExecuteToolCall(ctx, "session", "write", func() (bool, error) {
+				t.Error("canceled handler ran")
+				return true, nil
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("write error = %v, want context.Canceled", err)
+			}
+			armed = false
+			retryErr := engine.ExecuteToolCall(t.Context(), "session", "write", success)
+			if eventType == EventTypeToolCallAttempt && retryErr != nil {
+				t.Fatalf("cancellation before consumption spent the prerequisite: %v", retryErr)
+			}
+			if eventType == EventTypeCompletionConsumed && !errors.Is(retryErr, ErrPrerequisiteRequired) {
+				t.Fatalf("cancellation after consumption unexpectedly restored the prerequisite: %v", retryErr)
+			}
+		})
+	}
+}
+
 func TestEngineObserverDelayRechecksExpiry(t *testing.T) {
 	var clock *testClock
 	engine, clock := testEngine(t, Policy{CompletionTTL: time.Second, Rules: []Rule{{Tool: "write", AfterAny: []string{"read"}, Consume: true}}}, Options{Observer: func(event Event) {
