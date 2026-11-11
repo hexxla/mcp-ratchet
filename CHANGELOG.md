@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Record baseline and stack short-soak evidence, outstanding 24-hour/pilot gates and policy/failure qualification priorities while retaining alpha status.
+
 - Mark the repository and combined stack as alpha; preserve published tags, define independent v0 prerelease milestones and evidence-gated beta/v1 promotion, and link the shared practical qualification plan.
 
 - Consolidate the overview and library entry points into the repository guide while preserving the host write-retry contract.

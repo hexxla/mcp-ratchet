@@ -54,6 +54,25 @@ alone does not qualify the distributable stack. Repository promotion may happen
 independently, but the combined stack remains alpha until its complete selected
 combination passes the stack beta gates.
 
+## Qualification progress and priorities
+
+As of 2026-11-11, Ratchet `v0.4.0-alpha.1` passed `make ci` and `make build-all`
+in the three-repository baseline. The stack recovery matrix and 30-minute /
+1-hour lexical soaks also passed, including fresh-session policy denials,
+receipt replay and cancellation probes; the 1-hour stage verified idle HTTP
+session expiry and resumed work. Owner: void. See the
+[dated stack evidence report](https://github.com/hexxla/mosaic/blob/main/docs/qualification/2026-11-11-baseline-short-soaks.md)
+for exact sources, scope, results and local artifact custody.
+
+Next priorities are to complete the 24-hour workload and representative
+concurrency, custom-policy, advanced-profile and failure scenarios required by
+the gates below, then the named-owner operating pilot and contract acceptance.
+The current short workload is small and serial; CI and representative core
+calls are not evidence that every policy/failure variant ran in the soak.
+There is no new Ratchet feature commitment. Authentication, durable business
+idempotency, retention and host observability remain host responsibilities;
+new product features require a concrete adopting use case. Beta/v1 remain unmet.
+
 ## Beta gates
 
 Current status: **unmet / alpha**. The smaller scope makes Ratchet a beta
