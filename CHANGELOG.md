@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Go and dependencies** — Require Go 1.27.4 and update imported Go modules.
+
 - Consolidate architecture guidance into the project-specific boundary contract; remove the superseded implementation plan and generic layer tutorials.
 - Enforce a standard-library-only core and separate MCP/YAML adapter boundaries. Keep the existing CI pipeline and simple historical statistics scan.
 - Pin the MCP Go SDK to v1.7.0, matching the Mosaic integration baseline.

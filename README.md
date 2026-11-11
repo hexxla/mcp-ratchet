@@ -7,7 +7,7 @@ session identity, and the meaning of a successful result.
 
 ## Try the demo
 
-With Go 1.27.3 or newer, run:
+With Go 1.27.4 or newer, run:
 
 ```sh
 go run ./cmd/mcp-ratchet-demo -ratchet-config configs/ratchet.yaml
@@ -75,7 +75,7 @@ srv.AddReceivingMiddleware(ratchetmcp.NewMiddleware(engine))
 Install [`mcp.NewMiddleware`](pkg/ratchet/mcp/middleware.go) once and register
 SDK tools normally. It records success after SDK validation and a complete JSON
 snapshot of the result. Serialization or output-validation failures spend any
-one-time prerequisite and create no downstream completion. SDK 1.7 input-required
+one-time prerequisite and create no downstream completion. SDK input-required
 responses (including load shedding) also create no completion. Continuation RPCs
 satisfy the policy again and need a fresh prerequisite when the prior RPC consumed
 one; Ratchet keeps no pending continuation reservation.

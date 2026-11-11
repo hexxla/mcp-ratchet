@@ -40,7 +40,7 @@ core execution has no history proxy or event-store dependency.
 success callback. It wraps the SDK's final receiving handler, snapshots all
 wire JSON once, and reports success after validation and serialization. Schema,
 input, handler, tool-result, metadata, and content failures cannot grant a
-completion. SDK 1.7 input-required results, including empty load-shedding
+completion. SDK input-required results, including empty load-shedding
 responses, create no completion. Each continuation RPC is gated independently;
 a consumed prerequisite must be refreshed, with no pending-reservation machine.
 
