@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Mark the repository and combined stack as alpha; preserve published tags, define independent v0 prerelease milestones and evidence-gated beta/v1 promotion, and link the shared practical qualification plan.
+
 - Consolidate the overview and library entry points into the repository guide while preserving the host write-retry contract.
 
 - **Go and dependencies** — Require Go 1.27.4 and update imported Go modules.

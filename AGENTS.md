@@ -23,3 +23,9 @@
 ## Documentation
 
 Update the owning documentation and the [changelog](CHANGELOG.md) for user-visible changes. Follow the [security policy](SECURITY.md) when handling vulnerabilities.
+
+## Release maturity
+
+The repository and combined stack are alpha. Follow [VERSIONING.md](VERSIONING.md):
+preserve published tags, keep versions independent, publish deliberate v0
+prerelease milestones and require recorded beta/v1 qualification before promotion.

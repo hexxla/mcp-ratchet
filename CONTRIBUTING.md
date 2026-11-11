@@ -82,3 +82,12 @@ After the new workflow passes on a pull request, configure the `main` ruleset
 to require pull requests and the **Required CI** check from GitHub Actions.
 Block force pushes and branch deletion. Protect version tags matching
 `v*.*.*` so only release maintainers can create them.
+
+## Release qualification
+
+The repository and combined stack are alpha. Follow the local
+[release policy](VERSIONING.md) for independent v0 prerelease milestones,
+immutable existing tags, beta/v1 gates and compatibility notes. The
+[shared qualification plan](https://github.com/hexxla/mosaic/blob/main/docs/RELEASE_QUALIFICATION.md)
+defines candidate checks, the 24-hour beta workload and 14-day operational
+pilot. Ordinary CI or a commit does not authorize tagging or publication.

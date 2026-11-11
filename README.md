@@ -1,5 +1,10 @@
 # MCP Ratchet
 
+**Status: alpha.** This repository and the HexxlaDB–Mosaic–MCP Ratchet stack
+are under active development. Use controlled evaluation with recoverable data;
+general production sign-off has not been given. Existing tags remain intact.
+[Release policy and beta/v1 gates](VERSIONING.md)
+
 Ratchet is a Go library that enforces prerequisites between successful calls in
 one session. A write can require a successful tag listing first. The core owns
 process-local completion state; applications own authentication, resource access,
